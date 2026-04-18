@@ -464,8 +464,13 @@ const CONFIG = {
   OPINET_KEY: 'F260418102',
 
   // CORS 프록시 — 무료 공개 프록시 사용
-  // 필요 시 https://corsproxy.io/ 또는 allorigins.win 으로 교체 가능
-  PROXY: 'https://api.allorigins.win/raw?url=',
+  // CORS 프록시 목록 — 자동으로 순서대로 시도
+  PROXIES: [
+    'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url=',
+    'https://thingproxy.freeboard.io/fetch/',
+    'https://cors-anywhere.herokuapp.com/',
+  ],
 };
 
 /* ══════════════════════════════════════════════════════════════
@@ -607,67 +612,84 @@ function initMap(lat, lng) {
 /* ══════════════════════════════════════════════════════════════
    2. 오피넷 API 호출 (CORS 프록시 경유)
    ══════════════════════════════════════════════════════════════ */
+// JSONP 호출 — CORS 없이 오피넷 API 직접 호출
+function fetchJSONP(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'opinet_cb_' + Date.now();
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('오피넷 API 응답 시간 초과 (10초)'));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    script.src = url + '&callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('오피넷 스크립트 로드 실패')); };
+    document.head.appendChild(script);
+  });
+}
+
 async function fetchStations(lat, lng, radius, fuelCode) {
-  /*
-    오피넷 공공데이터 API — 반경 내 주유소 가격 조회
-    엔드포인트: https://www.opinet.co.kr/api/aroundAll.do
-    주요 파라미터:
-      code     : 인증키
-      x        : KATEC X (경도 방향)
-      y        : KATEC Y (위도 방향)
-      radius   : 반경(미터)
-      prodcd   : 유종코드 (B027=휘발유, D047=경유, K010=등유, C004=LPG)
-      sort     : 1=가격순, 2=거리순
-      out      : json
-  */
-
-  // WGS84 → KATEC 역변환 (간단 근사 — 오피넷은 GRS80 기반 TM 중부원점)
-  // 실제로는 정밀 변환 라이브러리를 쓰는 게 좋지만,
-  // 오피넷은 위경도(WGS84)를 직접 받는 파라미터도 지원합니다.
-  // ★ 오피넷 aroundAll.do는 x/y를 WGS84 경위도로도 수용합니다 (lon/lat 순서)
-  const lon = lng;
-  const lat_ = lat;
-
   const apiUrl = [
     'https://www.opinet.co.kr/api/aroundAll.do',
     `?code=${CONFIG.OPINET_KEY}`,
-    `&x=${lon}&y=${lat_}`,
+    `&x=${lng}&y=${lat}`,
     `&radius=${radius}`,
     `&prodcd=${fuelCode}`,
     `&sort=1`,
     `&out=json`,
   ].join('');
 
-  const proxyUrl = CONFIG.PROXY + encodeURIComponent(apiUrl);
-
-  const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error(`오피넷 API 오류: ${res.status}`);
-
-  const text = await res.text();
   let data;
   try {
-    data = JSON.parse(text);
-  } catch {
-    // XML 응답인 경우 파싱
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text, 'text/xml');
-    const oils = [...xml.querySelectorAll('OIL')];
-    if (oils.length === 0) throw new Error('주유소 데이터를 찾을 수 없습니다. API 키를 확인해주세요.');
-    return oils.map(oil => ({
-      id:       oil.querySelector('UNI_ID')?.textContent || '',
-      name:     oil.querySelector('OS_NM')?.textContent || '이름 없음',
-      brand:    oil.querySelector('POLL_DIV_CD')?.textContent || '',
-      address:  oil.querySelector('VAN_ADR')?.textContent || '',
-      price:    parseInt(oil.querySelector('PRICE')?.textContent || '0', 10),
-      gisX:     parseFloat(oil.querySelector('GIS_X')?.textContent || '0'),
-      gisY:     parseFloat(oil.querySelector('GIS_Y')?.textContent || '0'),
-      selfYn:   oil.querySelector('SELF_YN')?.textContent || 'N',
-      tel:      oil.querySelector('TEL')?.textContent || '',
-    }));
+    // 1차: JSONP 직접 호출 (CORS 우회)
+    data = await fetchJSONP(apiUrl);
+  } catch(e) {
+    // 2차: 프록시 순차 시도
+    let lastErr = e;
+    for (const proxy of CONFIG.PROXIES) {
+      try {
+        const res = await fetch(proxy + encodeURIComponent(apiUrl));
+        if (!res.ok) continue;
+        const text = await res.text();
+        // XML 응답 처리
+        if (text.trim().startsWith('<')) {
+          const parser = new DOMParser();
+          const xml = parser.parseFromString(text, 'text/xml');
+          const oils = [...xml.querySelectorAll('OIL')];
+          if (oils.length > 0) {
+            return oils.map(oil => ({
+              id:      oil.querySelector('UNI_ID')?.textContent || '',
+              name:    oil.querySelector('OS_NM')?.textContent || '이름 없음',
+              brand:   oil.querySelector('POLL_DIV_CD')?.textContent || '',
+              address: oil.querySelector('VAN_ADR')?.textContent || '',
+              price:   parseInt(oil.querySelector('PRICE')?.textContent || '0', 10),
+              gisX:    parseFloat(oil.querySelector('GIS_X')?.textContent || '0'),
+              gisY:    parseFloat(oil.querySelector('GIS_Y')?.textContent || '0'),
+              selfYn:  oil.querySelector('SELF_YN')?.textContent || 'N',
+              tel:     oil.querySelector('TEL')?.textContent || '',
+            }));
+          }
+        }
+        data = JSON.parse(text);
+        break;
+      } catch(e2) { lastErr = e2; }
+    }
+    if (!data) throw new Error('모든 프록시 실패: ' + lastErr.message);
   }
 
-  // JSON 응답 처리
   const list = data?.RESULT?.OIL || [];
+  if (list.length === 0) throw new Error('주유소 데이터 없음 — 오피넷 키를 확인해주세요.');
   return list.map(o => ({
     id:      o.UNI_ID || '',
     name:    o.OS_NM || '이름 없음',
