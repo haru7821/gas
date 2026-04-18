@@ -289,30 +289,65 @@ function initMap(lat, lng) {
 }
 
 /* ══════════════════════════════════════════════════════
-   WGS84 → KATEC 변환 (오피넷 API 좌표계)
+   WGS84 → TM128(KATEC) 변환
+   오피넷은 Bessel 타원체 기반 TM128 좌표계 사용
+   lon_0=128, lat_0=38, x_0=400000, y_0=600000
 ══════════════════════════════════════════════════════ */
 function wgs84ToKatec(lat, lng) {
-  const RE = 6378137.0, F = 1/298.257222101;
-  const ES = 2*F - F*F, E = Math.sqrt(ES);
-  const ORIG_LAT = 38.0*Math.PI/180, ORIG_LON = 127.0*Math.PI/180;
-  const K0 = 0.9999, X0 = 200000, Y0 = 500000;
+  // WGS84 → Bessel 변환 (7파라미터 변환)
+  const dx=-115.80, dy=474.99, dz=674.11;
+  const rx=1.16, ry=-2.31, rz=-1.63, ds=6.43;
 
-  function mArc(phi) {
-    return RE*((1-ES/4-3*ES*ES/64-5*ES**3/256)*phi
-      -(3*ES/8+3*ES*ES/32+45*ES**3/1024)*Math.sin(2*phi)
-      +(15*ES*ES/256+45*ES**3/1024)*Math.sin(4*phi)
-      -(35*ES**3/3072)*Math.sin(6*phi));
+  const WA=6378137.0, WF=1/298.257223563;
+  const BA=6377397.155, BF=1/299.1528128;
+  const WE2=2*WF-WF*WF, BE2=2*BF-BF*BF;
+
+  const phi=lat*Math.PI/180, lam=lng*Math.PI/180;
+  const sinPhi=Math.sin(phi), cosPhi=Math.cos(phi);
+  const sinLam=Math.sin(lam), cosLam=Math.cos(lam);
+  const WN=WA/Math.sqrt(1-WE2*sinPhi*sinPhi);
+  const h=0;
+
+  const X=(WN+h)*cosPhi*cosLam;
+  const Y=(WN+h)*cosPhi*sinLam;
+  const Z=(WN*(1-WE2)+h)*sinPhi;
+
+  const rxR=rx/206265, ryR=ry/206265, rzR=rz/206265;
+  const s=ds*1e-6;
+  const X2=dx+(1+s)*(X - rzR*Y + ryR*Z);
+  const Y2=dy+(1+s)*(rzR*X + Y - rxR*Z);
+  const Z2=dz+(1+s)*(-ryR*X + rxR*Y + Z);
+
+  // Bessel 위경도 계산
+  let lon2=Math.atan2(Y2,X2);
+  let p=Math.sqrt(X2*X2+Y2*Y2);
+  let lat2=Math.atan2(Z2,p*(1-BE2));
+  for(let i=0;i<10;i++){
+    const BN=BA/Math.sqrt(1-BE2*Math.sin(lat2)*Math.sin(lat2));
+    lat2=Math.atan2(Z2+BE2*BN*Math.sin(lat2),p);
   }
 
-  const phi = lat*Math.PI/180, lam = lng*Math.PI/180;
-  const sinPhi = Math.sin(phi), cosPhi = Math.cos(phi), tanPhi = Math.tan(phi);
-  const N = RE/Math.sqrt(1-ES*sinPhi*sinPhi);
-  const T = tanPhi*tanPhi, C = (ES/(1-ES))*cosPhi*cosPhi;
-  const A = cosPhi*(lam-ORIG_LON);
-  const M = mArc(phi), M0 = mArc(ORIG_LAT);
+  // Bessel 위경도 → TM128
+  const a=BA, e2=BE2, e=Math.sqrt(e2);
+  const k0=0.9999, x0=400000, y0=600000;
+  const lon0=128*Math.PI/180, lat0=38*Math.PI/180;
 
-  const katecX = X0 + K0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*(ES/(1-ES)))*A**5/120);
-  const katecY = Y0 + K0*(M-M0+N*tanPhi*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*(ES/(1-ES)))*A**6/720));
+  function mArc(phi2){
+    return a*((1-e2/4-3*e2*e2/64-5*e2**3/256)*phi2
+      -(3*e2/8+3*e2*e2/32+45*e2**3/1024)*Math.sin(2*phi2)
+      +(15*e2*e2/256+45*e2**3/1024)*Math.sin(4*phi2)
+      -(35*e2**3/3072)*Math.sin(6*phi2));
+  }
+
+  const N=a/Math.sqrt(1-e2*Math.sin(lat2)*Math.sin(lat2));
+  const T=Math.tan(lat2)**2;
+  const C=(e2/(1-e2))*Math.cos(lat2)**2;
+  const A2=Math.cos(lat2)*(lon2-lon0);
+  const M=mArc(lat2), M0=mArc(lat0);
+
+  const katecX=x0+k0*N*(A2+(1-T+C)*A2**3/6+(5-18*T+T*T+72*C-58*(e2/(1-e2)))*A2**5/120);
+  const katecY=y0+k0*(M-M0+N*Math.tan(lat2)*(A2*A2/2+(5-T+9*C+4*C*C)*A2**4/24+(61-58*T+T*T+600*C-330*(e2/(1-e2)))*A2**6/720));
+
   return { x: Math.round(katecX), y: Math.round(katecY) };
 }
 
