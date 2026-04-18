@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>⛽ 우리 동네 최저가 주유소</title>
+
+  <!-- ✅ 카카오맵 SDK: YOUR_KAKAO_KEY 를 발급받은 JavaScript 키로 교체 -->
+  <script type="text/javascript"
+    src="//dapi.kakao.com/v2/maps/sdk.js?appkey=0562084ccf6534e21f4677141d3bec4f&libraries=services,clusterer">
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── RESET & BASE ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #161a23;
+      --border:    #252a38;
+      --accent:    #f9a825;
+      --red:       #ff3b3b;
+      --blue:      #2979ff;
+      --green:     #00e676;
+      --text:      #e8eaf0;
+      --muted:     #8892a4;
+      --card-h:    340px;
+      --radius:    14px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Noto Sans KR', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ── LAYOUT ── */
+    #app {
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      grid-template-columns: 360px 1fr;
+      height: 100vh;
+      gap: 0;
+    }
+
+    /* ── HEADER ── */
+    header {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    header .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 24px;
+      letter-spacing: 1px;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    header .logo span { color: var(--text); }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+
+    select, button {
+      font-family: 'Noto Sans KR', sans-serif;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .18s;
+    }
+
+    select {
+      padding: 6px 10px;
+      outline: none;
+    }
+    select:hover { border-color: var(--accent); }
+
+    .btn {
+      padding: 7px 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { filter: brightness(1.12); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .sidebar-header h2 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+
+    .summary-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .summary-pill {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .summary-pill .val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .summary-pill .lbl {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    #station-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #station-list::-webkit-scrollbar { width: 4px; }
+    #station-list::-webkit-scrollbar-track { background: transparent; }
+    #station-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── STATION CARD ── */
+    .station-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color .18s, transform .12s;
+      position: relative;
+      overflow: hidden;
+    }
+    .station-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      border-radius: 3px 0 0 3px;
+      background: var(--blue);
+      transition: background .18s;
+    }
+    .station-card.cheapest::before { background: var(--red); }
+    .station-card:hover { border-color: var(--accent); transform: translateX(2px); }
+    .station-card.active { border-color: var(--accent); }
+
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .card-rank {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 2px 7px;
+      flex-shrink: 0;
+    }
+    .cheapest .card-rank { background: var(--red); color: #fff; }
+
+    .card-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+      flex: 1;
+    }
+
+    .card-price {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .card-price small { font-size: 12px; color: var(--muted); }
+
+    .card-meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .card-meta span { display: flex; align-items: center; gap: 3px; }
+
+    /* ── MAP ── */
+    #map-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── CUSTOM OVERLAY ── */
+    .map-label {
+      position: relative;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4);
+      cursor: pointer;
+      transition: transform .15s;
+      transform-origin: bottom center;
+    }
+    .map-label::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 4px 0;
+      border-style: solid;
+    }
+    .map-label:hover { transform: scale(1.08); }
+    .map-label.cheap { background: var(--red); color: #fff; }
+    .map-label.cheap::after { border-color: var(--red) transparent transparent; }
+    .map-label.normal { background: var(--blue); color: #fff; }
+    .map-label.normal::after { border-color: var(--blue) transparent transparent; }
+    .map-label .station-name { font-size: 11px; font-weight: 500; opacity: .85; }
+    .map-label .station-price { font-size: 14px; letter-spacing: -.3px; }
+
+    /* ── TOAST / STATUS ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 10px 20px;
+      font-size: 13px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 9999;
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── LOADING OVERLAY ── */
+    #loading {
+      position: fixed; inset: 0;
+      background: rgba(13,15,20,.88);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+      gap: 16px;
+      transition: opacity .3s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p { color: var(--muted); font-size: 14px; }
+
+    /* ── INFO PANEL (on map) ── */
+    #info-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      min-width: 220px;
+      max-width: 280px;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+      animation: fadeUp .2s ease;
+    }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+    #info-panel.visible { display: block; }
+    #info-panel .close-btn {
+      position: absolute; top: 8px; right: 10px;
+      background: none; border: none;
+      color: var(--muted); font-size: 16px; cursor: pointer;
+    }
+    #info-panel h3 { font-size: 15px; font-weight: 700; padding-right: 20px; line-height: 1.3; }
+    #info-panel .ip-price { font-size: 26px; font-weight: 700; color: var(--accent); margin: 6px 0; }
+    #info-panel .ip-meta { font-size: 12px; color: var(--muted); line-height: 1.7; }
+    #info-panel .ip-badge {
+      display: inline-block;
+      background: var(--red);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 5px;
+      padding: 2px 8px;
+      margin-bottom: 6px;
+    }
+    .nav-btn {
+      display: block; width: 100%; margin-top: 10px;
+      padding: 8px; border-radius: 8px;
+      background: var(--accent); color: #000;
+      font-size: 13px; font-weight: 700;
+      border: none; cursor: pointer; text-align: center;
+      text-decoration: none;
+    }
+    .nav-btn:hover { filter: brightness(1.1); }
+
+    /* ── MOBILE ── */
+    @media (max-width: 680px) {
+      #app {
+        grid-template-rows: 52px 1fr auto;
+        grid-template-columns: 1fr;
+      }
+      header .logo { font-size: 20px; }
+      #sidebar {
+        border-right: none;
+        border-top: 1px solid var(--border);
+        max-height: 38vh;
+        overflow: hidden;
+      }
+      #map-wrap { height: calc(62vh - 52px); }
+      #info-panel { left: 12px; right: 12px; bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- HEADER -->
+  <header>
+    <div class="logo">⛽ <span>최저가</span> 주유소</div>
+    <div class="header-controls">
+      <select id="fuel-type">
+        <option value="B027">휘발유</option>
+        <option value="D047">경유</option>
+        <option value="K010">등유</option>
+        <option value="C004">LPG</option>
+      </select>
+      <select id="radius-sel">
+        <option value="3000">3km</option>
+        <option value="5000" selected>5km</option>
+        <option value="10000">10km</option>
+      </select>
+      <button class="btn btn-primary" id="refresh-btn">🔄 새로고침</button>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h2>📋 주유소 목록</h2>
+      <div class="summary-row">
+        <div class="summary-pill">
+          <div class="val" id="sum-count">—</div>
+          <div class="lbl">검색 결과</div>
+        </div>
+        <div class="summary-pill">
+          <div class="val" id="sum-min">—</div>
+          <div class="lbl">최저가</div>
+        </div>
+        <div class="summary-pill">
+          <div class="val" id="sum-avg">—</div>
+          <div class="lbl">평균가</div>
+        </div>
+      </div>
+    </div>
+    <div id="station-list">
+      <div style="color:var(--muted);font-size:13px;padding:20px;text-align:center;">
+        위치 정보를 불러오는 중...
+      </div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-wrap">
+    <div id="map"></div>
+    <!-- 상세 정보 패널 -->
+    <div id="info-panel">
+      <button class="close-btn" onclick="closeInfoPanel()">✕</button>
+      <div id="ip-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="loading-msg">위치를 가져오는 중...</p>
+</div>
+
+<!-- TOAST -->
+<div id="toast">
+  <span id="toast-icon">ℹ️</span>
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   ✅  API 키 설정 — 아래 두 값을 본인 키로 교체하세요
+   ══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  // 카카오 개발자 콘솔 > 내 애플리케이션 > JavaScript 키
+  KAKAO_KEY: '0562084ccf6534e21f4677141d3bec4f',
+
+  // 공공데이터포털 오피넷 API 인증키 (일반 인증키)
+  OPINET_KEY: 'Qwlo65MMasrEgnKsKIR76WOkSjoiW2H41BaVvLQnbQ',
+
+  // CORS 프록시 — 무료 공개 프록시 사용
+  // 필요 시 https://corsproxy.io/ 또는 allorigins.win 으로 교체 가능
+  PROXY: 'https://corsproxy.io/?',
+};
+
+/* ══════════════════════════════════════════════════════════════
+   KATEC → WGS84 좌표 변환 (Proj4 없이 순수 JS 구현)
+   오피넷 API가 반환하는 GIS_X/GIS_Y 는 KATEC(Korea Transverse Mercator)
+   중부원점 기준의 미터 좌표입니다.
+   ══════════════════════════════════════════════════════════════ */
+function katecToWGS84(katecX, katecY) {
+  // KATEC 파라미터 (중부원점)
+  const RE = 6378137.0;
+  const F  = 1 / 298.257222101;
+  const ES = 2 * F - F * F;
+  const E  = Math.sqrt(ES);
+
+  const ORIGIN_LAT = 38.0 * Math.PI / 180;  // 위도 원점
+  const ORIGIN_LON = 127.0 * Math.PI / 180; // 경도 원점
+  const K0 = 0.9999;
+  const X0 = 200000; // False Easting
+  const Y0 = 500000; // False Northing
+
+  const x = katecX - X0;
+  const y = katecY - Y0;
+
+  const M0 = meridianArc(RE, ES, E, ORIGIN_LAT);
+  const M  = M0 + y / K0;
+
+  const mu = M / (RE * (1 - ES / 4 - 3 * ES * ES / 64 - 5 * ES ** 3 / 256));
+  const e1 = (1 - Math.sqrt(1 - ES)) / (1 + Math.sqrt(1 - ES));
+
+  const phi1 = mu
+    + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu)
+    + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu)
+    + (151 * e1 ** 3 / 96) * Math.sin(6 * mu);
+
+  const sinPhi1 = Math.sin(phi1);
+  const cosPhi1 = Math.cos(phi1);
+  const tanPhi1 = Math.tan(phi1);
+
+  const N1  = RE / Math.sqrt(1 - ES * sinPhi1 ** 2);
+  const T1  = tanPhi1 ** 2;
+  const C1  = (ES / (1 - ES)) * cosPhi1 ** 2;
+  const R1  = RE * (1 - ES) / Math.pow(1 - ES * sinPhi1 ** 2, 1.5);
+  const D   = x / (N1 * K0);
+
+  const lat = phi1
+    - (N1 * tanPhi1 / R1) * (
+        D ** 2 / 2
+        - (5 + 3 * T1 + 10 * C1 - 4 * C1 ** 2 - 9 * (ES / (1 - ES))) * D ** 4 / 24
+        + (61 + 90 * T1 + 298 * C1 + 45 * T1 ** 2 - 252 * (ES / (1 - ES)) - 3 * C1 ** 2) * D ** 6 / 720
+      );
+
+  const lon = ORIGIN_LON + (
+      D
+      - (1 + 2 * T1 + C1) * D ** 3 / 6
+      + (5 - 2 * C1 + 28 * T1 - 3 * C1 ** 2 + 8 * (ES / (1 - ES)) + 24 * T1 ** 2) * D ** 5 / 120
+    ) / cosPhi1;
+
+  return {
+    lat: lat * 180 / Math.PI,
+    lng: lon * 180 / Math.PI,
+  };
+}
+
+function meridianArc(a, es, e, lat) {
+  return a * (
+    (1 - es / 4 - 3 * es ** 2 / 64 - 5 * es ** 3 / 256) * lat
+    - (3 * es / 8 + 3 * es ** 2 / 32 + 45 * es ** 3 / 1024) * Math.sin(2 * lat)
+    + (15 * es ** 2 / 256 + 45 * es ** 3 / 1024) * Math.sin(4 * lat)
+    - (35 * es ** 3 / 3072) * Math.sin(6 * lat)
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   거리 계산 (Haversine)
+   ══════════════════════════════════════════════════════════════ */
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   앱 상태
+   ══════════════════════════════════════════════════════════════ */
+let map, userLat, userLng;
+let overlays = [];
+let stations = [];
+
+/* ══════════════════════════════════════════════════════════════
+   UI 헬퍼
+   ══════════════════════════════════════════════════════════════ */
+function setLoading(show, msg = '') {
+  const el = document.getElementById('loading');
+  if (msg) document.getElementById('loading-msg').textContent = msg;
+  el.classList.toggle('hidden', !show);
+}
+
+let toastTimer;
+function showToast(msg, icon = 'ℹ️', duration = 3000) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  document.getElementById('toast-icon').textContent = icon;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function closeInfoPanel() {
+  document.getElementById('info-panel').classList.remove('visible');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   1. 카카오맵 초기화
+   ══════════════════════════════════════════════════════════════ */
+function initMap(lat, lng) {
+  const container = document.getElementById('map');
+  const options = {
+    center: new kakao.maps.LatLng(lat, lng),
+    level: 5,
+  };
+  map = new kakao.maps.Map(container, options);
+
+  // 내 위치 마커
+  const myMarker = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(lat, lng),
+    content: `<div style="
+      width:16px;height:16px;border-radius:50%;
+      background:#00e676;border:3px solid #fff;
+      box-shadow:0 0 0 4px rgba(0,230,118,.3);
+    "></div>`,
+    zIndex: 10,
+  });
+  myMarker.setMap(map);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2. 오피넷 API 호출 (CORS 프록시 경유)
+   ══════════════════════════════════════════════════════════════ */
+async function fetchStations(lat, lng, radius, fuelCode) {
+  /*
+    오피넷 공공데이터 API — 반경 내 주유소 가격 조회
+    엔드포인트: https://www.opinet.co.kr/api/aroundAll.do
+    주요 파라미터:
+      code     : 인증키
+      x        : KATEC X (경도 방향)
+      y        : KATEC Y (위도 방향)
+      radius   : 반경(미터)
+      prodcd   : 유종코드 (B027=휘발유, D047=경유, K010=등유, C004=LPG)
+      sort     : 1=가격순, 2=거리순
+      out      : json
+  */
+
+  // WGS84 → KATEC 역변환 (간단 근사 — 오피넷은 GRS80 기반 TM 중부원점)
+  // 실제로는 정밀 변환 라이브러리를 쓰는 게 좋지만,
+  // 오피넷은 위경도(WGS84)를 직접 받는 파라미터도 지원합니다.
+  // ★ 오피넷 aroundAll.do는 x/y를 WGS84 경위도로도 수용합니다 (lon/lat 순서)
+  const lon = lng;
+  const lat_ = lat;
+
+  const apiUrl = [
+    'https://www.opinet.co.kr/api/aroundAll.do',
+    `?code=${CONFIG.OPINET_KEY}`,
+    `&x=${lon}&y=${lat_}`,
+    `&radius=${radius}`,
+    `&prodcd=${fuelCode}`,
+    `&sort=1`,
+    `&out=json`,
+  ].join('');
+
+  const proxyUrl = CONFIG.PROXY + encodeURIComponent(apiUrl);
+
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`오피넷 API 오류: ${res.status}`);
+
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // XML 응답인 경우 파싱
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, 'text/xml');
+    const oils = [...xml.querySelectorAll('OIL')];
+    if (oils.length === 0) throw new Error('주유소 데이터를 찾을 수 없습니다. API 키를 확인해주세요.');
+    return oils.map(oil => ({
+      id:       oil.querySelector('UNI_ID')?.textContent || '',
+      name:     oil.querySelector('OS_NM')?.textContent || '이름 없음',
+      brand:    oil.querySelector('POLL_DIV_CD')?.textContent || '',
+      address:  oil.querySelector('VAN_ADR')?.textContent || '',
+      price:    parseInt(oil.querySelector('PRICE')?.textContent || '0', 10),
+      gisX:     parseFloat(oil.querySelector('GIS_X')?.textContent || '0'),
+      gisY:     parseFloat(oil.querySelector('GIS_Y')?.textContent || '0'),
+      selfYn:   oil.querySelector('SELF_YN')?.textContent || 'N',
+      tel:      oil.querySelector('TEL')?.textContent || '',
+    }));
+  }
+
+  // JSON 응답 처리
+  const list = data?.RESULT?.OIL || [];
+  return list.map(o => ({
+    id:      o.UNI_ID || '',
+    name:    o.OS_NM || '이름 없음',
+    brand:   o.POLL_DIV_CD || '',
+    address: o.VAN_ADR || '',
+    price:   parseInt(o.PRICE || '0', 10),
+    gisX:    parseFloat(o.GIS_X || '0'),
+    gisY:    parseFloat(o.GIS_Y || '0'),
+    selfYn:  o.SELF_YN || 'N',
+    tel:     o.TEL || '',
+  }));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3. 좌표 결정 — GIS_X/Y 가 KATEC이면 변환, WGS84이면 그대로
+   ══════════════════════════════════════════════════════════════ */
+function resolveLatLng(station) {
+  const x = station.gisX, y = station.gisY;
+  // KATEC 좌표는 100000~600000 범위 (미터 단위)
+  if (x > 1000 && y > 1000) {
+    return katecToWGS84(x, y);
+  }
+  // 이미 위경도인 경우 (경도, 위도 순서 확인)
+  if (x > 90 && x < 145) return { lat: y, lng: x };
+  return { lat: x, lng: y };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4. 마커/오버레이 렌더링
+   ══════════════════════════════════════════════════════════════ */
+const BRAND_MAP = {
+  'SKE': 'SK에너지', 'GSC': 'GS칼텍스', 'HDO': 'HD현대오일뱅크',
+  'SOL': 'S-OIL', 'RTE': '자영알뜰', 'RTX': '고속도로알뜰',
+  'NHO': '농협알뜰', 'ETC': '기타', 'EGS': 'E1', 'SKG': 'SK가스',
+};
+
+function clearOverlays() {
+  overlays.forEach(o => o.setMap(null));
+  overlays = [];
+}
+
+function renderMarkers(list) {
+  clearOverlays();
+  if (!list.length) return;
+
+  const minPrice = Math.min(...list.filter(s => s.price > 0).map(s => s.price));
+
+  list.forEach((station, i) => {
+    const { lat, lng } = resolveLatLng(station);
+    if (!lat || !lng) return;
+
+    const isCheap = station.price === minPrice;
+    const cls = isCheap ? 'cheap' : 'normal';
+    const priceText = station.price > 0 ? station.price.toLocaleString() + '원' : '가격미상';
+
+    const content = document.createElement('div');
+    content.className = `map-label ${cls}`;
+    content.innerHTML = `
+      <div class="station-name">${station.name}</div>
+      <div class="station-price">${priceText}</div>
+    `;
+    content.addEventListener('click', () => showInfoPanel(station, lat, lng, isCheap));
+
+    const overlay = new kakao.maps.CustomOverlay({
+      position: new kakao.maps.LatLng(lat, lng),
+      content,
+      yAnchor: 1.3,
+      zIndex: isCheap ? 5 : 3,
+    });
+    overlay.setMap(map);
+    overlays.push(overlay);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5. 사이드바 카드 렌더링
+   ══════════════════════════════════════════════════════════════ */
+function renderList(list) {
+  const el = document.getElementById('station-list');
+  if (!list.length) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center;">
+      주변 주유소를 찾을 수 없습니다.
+    </div>`;
+    return;
+  }
+
+  const sorted = [...list].filter(s => s.price > 0).sort((a, b) => a.price - b.price);
+  const minPrice = sorted[0]?.price || 0;
+  const avg = Math.round(sorted.reduce((s, x) => s + x.price, 0) / sorted.length);
+
+  document.getElementById('sum-count').textContent = sorted.length + '개';
+  document.getElementById('sum-min').textContent   = minPrice.toLocaleString();
+  document.getElementById('sum-avg').textContent   = avg.toLocaleString();
+
+  el.innerHTML = sorted.map((s, i) => {
+    const isCheap = s.price === minPrice;
+    const { lat, lng } = resolveLatLng(s);
+    const dist = (haversine(userLat, userLng, lat, lng) / 1000).toFixed(1);
+    const brand = BRAND_MAP[s.brand] || s.brand || '기타';
+
+    return `<div class="station-card ${isCheap ? 'cheapest' : ''}"
+      onclick="focusStation(${lat}, ${lng}, '${s.id}', ${isCheap})">
+      <div class="card-top">
+        <span class="card-rank">${isCheap ? '🏆 최저가' : `#${i + 1}`}</span>
+        <div class="card-name">${s.name}</div>
+        <div class="card-price">${s.price.toLocaleString()}<small>원</small></div>
+      </div>
+      <div class="card-meta">
+        <span>📍 ${dist}km</span>
+        <span>🏷 ${brand}</span>
+        ${s.selfYn === 'Y' ? '<span>🤖 셀프</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6. 정보 패널
+   ══════════════════════════════════════════════════════════════ */
+function showInfoPanel(station, lat, lng, isCheap) {
+  const brand = BRAND_MAP[station.brand] || station.brand || '기타';
+  const dist  = (haversine(userLat, userLng, lat, lng) / 1000).toFixed(1);
+  const naviUrl = `https://map.kakao.com/link/to/${encodeURIComponent(station.name)},${lat},${lng}`;
+
+  document.getElementById('ip-content').innerHTML = `
+    ${isCheap ? '<div class="ip-badge">🏆 최저가 주유소</div>' : ''}
+    <h3>${station.name}</h3>
+    <div class="ip-price">${station.price > 0 ? station.price.toLocaleString() + '원/ℓ' : '가격 미상'}</div>
+    <div class="ip-meta">
+      🏷 ${brand} &nbsp;|&nbsp; 📍 ${dist}km 거리<br>
+      📌 ${station.address || '주소 정보 없음'}<br>
+      ${station.tel ? '📞 ' + station.tel : ''}
+      ${station.selfYn === 'Y' ? '<br>🤖 셀프 주유소' : ''}
+    </div>
+    <a class="nav-btn" href="${naviUrl}" target="_blank">🚗 카카오맵으로 길찾기</a>
+  `;
+  document.getElementById('info-panel').classList.add('visible');
+}
+
+function focusStation(lat, lng, id, isCheap) {
+  map.setCenter(new kakao.maps.LatLng(lat, lng));
+  map.setLevel(3);
+  const station = stations.find(s => s.id === id);
+  if (station) showInfoPanel(station, lat, lng, isCheap);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7. 메인 로직
+   ══════════════════════════════════════════════════════════════ */
+async function loadStations() {
+  const fuelCode = document.getElementById('fuel-type').value;
+  const radius   = document.getElementById('radius-sel').value;
+
+  setLoading(true, '주유소 정보를 불러오는 중...');
+  closeInfoPanel();
+
+  try {
+    stations = await fetchStations(userLat, userLng, radius, fuelCode);
+
+    if (!stations.length) {
+      showToast('주변에 주유소가 없습니다.', '⚠️');
+      renderList([]);
+      clearOverlays();
+      return;
+    }
+
+    renderMarkers(stations);
+    renderList(stations);
+    showToast(`${stations.filter(s=>s.price>0).length}개 주유소를 찾았습니다!`, '✅');
+  } catch (err) {
+    console.error(err);
+    showToast('데이터 로드 실패: ' + err.message, '❌', 5000);
+    document.getElementById('station-list').innerHTML = `
+      <div style="color:var(--red);font-size:13px;padding:16px;">
+        <strong>오류 발생</strong><br><br>
+        ${err.message}<br><br>
+        <small style="color:var(--muted)">
+          ▸ API 키가 올바른지 확인해주세요.<br>
+          ▸ 오피넷 키: <a href="https://www.opinet.co.kr/user/main/mainView.do"
+            target="_blank" style="color:var(--accent)">발급 받기</a><br>
+          ▸ 카카오 키: <a href="https://developers.kakao.com"
+            target="_blank" style="color:var(--accent)">발급 받기</a>
+        </small>
+      </div>`;
+  } finally {
+    setLoading(false);
+  }
+}
+
+function init() {
+  setLoading(true, '위치를 가져오는 중...');
+
+  if (!navigator.geolocation) {
+    showToast('위치 정보를 지원하지 않는 브라우저입니다.', '❌');
+    setLoading(false);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      initMap(userLat, userLng);
+      loadStations();
+    },
+    err => {
+      // 위치 권한 거부 시 서울 시청 기본값
+      showToast('위치 권한이 없어 기본 위치(서울 시청)를 사용합니다.', '⚠️', 4000);
+      userLat = 37.5665;
+      userLng = 126.9780;
+      initMap(userLat, userLng);
+      loadStations();
+    },
+    { timeout: 8000, maximumAge: 30000 }
+  );
+}
+
+/* ── 이벤트 바인딩 ── */
+document.getElementById('refresh-btn').addEventListener('click', loadStations);
+document.getElementById('fuel-type').addEventListener('change', loadStations);
+document.getElementById('radius-sel').addEventListener('change', loadStations);
+
+/* ── 카카오맵 로드 완료 후 초기화 ── */
+if (typeof kakao !== 'undefined' && kakao.maps) {
+  kakao.maps.load(init);
+} else {
+  window.addEventListener('load', () => {
+    if (typeof kakao !== 'undefined') kakao.maps.load(init);
+    else showToast('카카오맵 로드 실패 — API 키를 확인해주세요.', '❌', 6000);
+  });
+}
+</script>
+</body>
+</html>
