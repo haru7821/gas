@@ -289,14 +289,43 @@ function initMap(lat, lng) {
 }
 
 /* ══════════════════════════════════════════════════════
+   WGS84 → KATEC 변환 (오피넷 API 좌표계)
+══════════════════════════════════════════════════════ */
+function wgs84ToKatec(lat, lng) {
+  const RE = 6378137.0, F = 1/298.257222101;
+  const ES = 2*F - F*F, E = Math.sqrt(ES);
+  const ORIG_LAT = 38.0*Math.PI/180, ORIG_LON = 127.0*Math.PI/180;
+  const K0 = 0.9999, X0 = 200000, Y0 = 500000;
+
+  function mArc(phi) {
+    return RE*((1-ES/4-3*ES*ES/64-5*ES**3/256)*phi
+      -(3*ES/8+3*ES*ES/32+45*ES**3/1024)*Math.sin(2*phi)
+      +(15*ES*ES/256+45*ES**3/1024)*Math.sin(4*phi)
+      -(35*ES**3/3072)*Math.sin(6*phi));
+  }
+
+  const phi = lat*Math.PI/180, lam = lng*Math.PI/180;
+  const sinPhi = Math.sin(phi), cosPhi = Math.cos(phi), tanPhi = Math.tan(phi);
+  const N = RE/Math.sqrt(1-ES*sinPhi*sinPhi);
+  const T = tanPhi*tanPhi, C = (ES/(1-ES))*cosPhi*cosPhi;
+  const A = cosPhi*(lam-ORIG_LON);
+  const M = mArc(phi), M0 = mArc(ORIG_LAT);
+
+  const katecX = X0 + K0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*(ES/(1-ES)))*A**5/120);
+  const katecY = Y0 + K0*(M-M0+N*tanPhi*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*(ES/(1-ES)))*A**6/720));
+  return { x: Math.round(katecX), y: Math.round(katecY) };
+}
+
+/* ══════════════════════════════════════════════════════
    오피넷 API — Cloudflare Worker 프록시 경유
 ══════════════════════════════════════════════════════ */
 async function fetchStations(lat, lng, radius, fuelCode) {
+  const katec = wgs84ToKatec(lat, lng);
   const apiUrl = [
     'https://www.opinet.co.kr/api/aroundAll.do',
     '?code=' + OPINET_KEY,
-    '&x=' + lng,
-    '&y=' + lat,
+    '&x=' + katec.x,
+    '&y=' + katec.y,
     '&radius=' + radius,
     '&prodcd=' + fuelCode,
     '&sort=1',
