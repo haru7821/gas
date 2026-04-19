@@ -140,6 +140,7 @@
       flex-direction: column;
       gap: 7px;
       -webkit-overflow-scrolling: touch;
+      align-items: stretch;
     }
     #station-list::-webkit-scrollbar { width: 3px; }
     #station-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -154,6 +155,8 @@
       transition: border-color .15s, transform .1s;
       position: relative;
       overflow: hidden;
+      min-height: 68px;
+      flex-shrink: 0;
       -webkit-user-select: none; user-select: none;
     }
     .station-card::before {
@@ -167,7 +170,11 @@
     .station-card:hover { border-color: var(--accent); transform: translateX(2px); }
     .station-card:active { transform: scale(.98); }
 
-    .card-row1 { display: flex; align-items: center; gap: 7px; }
+    .card-row1 { display: flex; align-items: center; gap: 7px; min-height: 28px; }
+    .card-name { font-size: 13px; font-weight: 700; flex: 1; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-price { font-size: 16px; font-weight: 900; color: var(--accent); white-space: nowrap; }
+    .card-price small { font-size: 10px; color: var(--muted); }
+    .card-row2 { display: flex; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
     .card-rank {
       font-size: 10px; font-weight: 700;
       color: var(--muted);
@@ -178,12 +185,6 @@
       white-space: nowrap;
     }
     .cheapest .card-rank { background: var(--red); color: #fff; }
-    .card-name { font-size: 13px; font-weight: 700; flex: 1; line-height: 1.25; }
-    .card-price { font-size: 16px; font-weight: 900; color: var(--accent); white-space: nowrap; }
-    .card-price small { font-size: 10px; color: var(--muted); }
-    .card-row2 { display: flex; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--muted); }
-
-    /* 지도 영역 */
     #map-wrap { position: relative; overflow: hidden; }
     #map { width: 100%; height: 100%; }
 
@@ -393,12 +394,19 @@
         display: flex;
         flex-direction: column;
         gap: 7px;
+        align-items: stretch;
       }
       .bs-list::-webkit-scrollbar { display: none; }
 
       /* 모바일 카드 */
-      .station-card { background: var(--surface2); border-color: transparent; }
+      .station-card {
+        background: var(--surface2);
+        border-color: transparent;
+        min-height: 68px;
+        flex-shrink: 0;
+      }
       .station-card:hover { transform: none; border-color: transparent; }
+      .station-card:active { transform: scale(.98); }
 
       /* 모바일 상세 시트 */
       #mobile-detail {
@@ -628,12 +636,12 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
 /* ══ 모바일 바텀시트 드래그 ══ */
 (function initBottomSheet() {
   const sheet = document.getElementById('bottom-sheet');
-  const PEEK  = 210;
-  const FULL  = () => Math.round(window.innerHeight * 0.72);
+  const PEEK  = () => Math.round(window.innerHeight * 0.30);
+  const FULL  = () => Math.round(window.innerHeight * 0.75);
   let curH = PEEK, dragging = false, startY = 0, startH = 0;
 
   function setH(h, anim=true) {
-    h = Math.max(PEEK, Math.min(FULL(), h));
+    h = Math.max(PEEK(), Math.min(FULL(), h));
     curH = h;
     sheet.style.transition = anim ? 'height .32s cubic-bezier(.32,1,.34,1)' : 'none';
     sheet.style.height = h + 'px';
@@ -642,7 +650,7 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
     document.getElementById('fab-refresh').style.bottom = (h + 14) + 'px';
   }
 
-  window.initSheet = () => { setH(PEEK, false); };
+  window.initSheet = () => { setH(PEEK(), false); };
 
   const handle = document.getElementById('bs-handle');
 
@@ -662,8 +670,8 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
   function onEnd() {
     if (!dragging) return;
     dragging = false;
-    const mid = (PEEK + FULL()) / 2;
-    setH(curH > mid ? FULL() : PEEK, true);
+    const mid = (PEEK() + FULL()) / 2;
+    setH(curH > mid ? FULL() : PEEK(), true);
   }
 
   handle.addEventListener('touchstart', onStart, {passive:true});
