@@ -303,10 +303,12 @@
     .map-label.cheap::after  { border-color: var(--red)  transparent transparent; }
     .map-label.normal { background: var(--blue); color: #fff; }
     .map-label.normal::after { border-color: var(--blue) transparent transparent; }
-    .map-label.ev     { background: #00C853; color: #fff; }
-    .map-label.ev::after     { border-color: #00C853 transparent transparent; }
-    .map-label.h2     { background: #6200EA; color: #fff; }
-    .map-label.h2::after     { border-color: #6200EA transparent transparent; }
+    .map-label.ev      { background: #00C853; color: #fff; }
+    .map-label.ev::after      { border-color: #00C853 transparent transparent; }
+    .map-label.ev-fast { background: #FF3D00; color: #fff; }
+    .map-label.ev-fast::after { border-color: #FF3D00 transparent transparent; }
+    .map-label.h2      { background: #6200EA; color: #fff; }
+    .map-label.h2::after      { border-color: #6200EA transparent transparent; }
     .map-label .sname { font-size: 10px; opacity: .85; }
     .map-label .sprice { font-size: 12px; font-weight: 900; }
 
@@ -593,6 +595,7 @@
     <div class="type-tabs" id="type-tabs">
       <button class="type-tab active" data-type="GAS">⛽ 주유소</button>
       <button class="type-tab" data-type="EV">⚡ 전기</button>
+      <button class="type-tab" data-type="EV_FAST">🔴 급속</button>
       <button class="type-tab" data-type="H2">🔵 수소</button>
     </div>
 
@@ -856,8 +859,9 @@ async function fetchKakaoPlaces(lat, lng, radius, keyword) {
 
 async function fetchStations(lat, lng, radius, fuelCode) {
   // 전기/수소는 카카오 로컬 API 사용
-  if (fuelCode === 'EV') return fetchKakaoPlaces(lat, lng, radius, '전기차충전소');
-  if (fuelCode === 'H2') return fetchKakaoPlaces(lat, lng, radius, '수소충전소');
+  if (fuelCode === 'EV')      return fetchKakaoPlaces(lat, lng, radius, '전기차충전소');
+  if (fuelCode === 'EV_FAST') return fetchKakaoPlaces(lat, lng, radius, '급속충전소');
+  if (fuelCode === 'H2')      return fetchKakaoPlaces(lat, lng, radius, '수소충전소');
 
   // 일반 주유소는 오피넷 API
   const k = wgs84ToKatec(lat, lng);
@@ -892,8 +896,9 @@ function resolveStation(s) {
 
 function renderMarkers(list) {
   clearOverlays();
-  const isEV = currentType === 'EV';
-  const isH2 = currentType === 'H2';
+  const isEV      = currentType === 'EV';
+  const isEV_FAST = currentType === 'EV_FAST';
+  const isH2      = currentType === 'H2';
   const priced = list.filter(s=>s.price>0);
   const minP   = priced.length ? Math.min(...priced.map(s=>s.price)) : 0;
 
@@ -904,9 +909,11 @@ function renderMarkers(list) {
 
     let cls, icon, priceText;
     if (isEV) {
-      cls = 'ev'; icon = '⚡'; priceText = '전기충전';
+      cls = 'ev';      icon = '⚡'; priceText = '전기충전';
+    } else if (isEV_FAST) {
+      cls = 'ev-fast'; icon = '🔴'; priceText = '급속충전';
     } else if (isH2) {
-      cls = 'h2'; icon = '🔵'; priceText = '수소충전';
+      cls = 'h2';      icon = '🔵'; priceText = '수소충전';
     } else {
       cls = cheap ? 'cheap' : 'normal';
       icon = '';
@@ -929,30 +936,41 @@ function renderMarkers(list) {
 
 /* ══ 상세 열기 ══ */
 function openDetail(s, cheap) {
+  const isCharge = (currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
   const {lat,lng} = s.type==='kakao' ? {lat:s.lat,lng:s.lng} : resolveLatLng(s);
-  const dist=haversine(userLat,userLng,lat,lng);
-  const brand=BRAND_MAP[s.brand]||s.brand||'기타';
-  const navi='https://map.kakao.com/link/to/'+encodeURIComponent(s.name)+','+lat+','+lng;
+  const dist = haversine(userLat,userLng,lat,lng);
+  const brand = BRAND_MAP[s.brand]||s.brand||'기타';
+  const navi  = 'https://map.kakao.com/link/to/'+encodeURIComponent(s.name)+','+lat+','+lng;
+
+  const typeLabel = currentType==='EV' ? '⚡ 전기충전소'
+                  : currentType==='EV_FAST' ? '🔴 급속충전소'
+                  : currentType==='H2' ? '🔵 수소충전소' : '';
+
   const html =
-    (cheap?'<div class="'+(isMobile()?'md-':'d-')+'badge">🏆 최저가</div><br>':'')
+    (cheap ? '<div class="'+(isMobile()?'md-':'d-')+'badge">🏆 최저가</div><br>' : '')
+    +(isCharge ? '<div class="'+(isMobile()?'md-':'d-')+'badge" style="background:var(--green)">'+typeLabel+'</div><br>' : '')
     +'<h3>'+s.name+'</h3>'
-    +(s.price>0?'<div class="d-price">'+s.price.toLocaleString()+'<span style="font-size:14px;color:var(--muted)"> 원/ℓ</span></div>':'')
+    +(s.price>0 ? '<div class="d-price">'+s.price.toLocaleString()+'<span style="font-size:14px;color:var(--muted)"> 원/ℓ</span></div>' : '')
     +'<div class="d-meta">'
-    +'🏷 '+brand+' | 📍 '+distText(dist)+'<br>'
-    +(s.address?'📌 '+s.address+'<br>':'')
-    +(s.tel?'📞 '+s.tel+'<br>':'')
-    +(s.selfYn==='Y'?'🤖 셀프 주유소':'')
+    +(isCharge ? '' : '🏷 '+brand+' | ')
+    +'📍 '+distText(dist)+'<br>'
+    +(s.address ? '📌 '+s.address+'<br>' : '')
+    +(s.tel ? '📞 '+s.tel+'<br>' : '')
+    +(!isCharge && s.selfYn==='Y' ? '🤖 셀프 주유소' : '')
     +'</div>';
 
   if (isMobile()) {
     document.getElementById('md-content').innerHTML =
       html
       +'<a class="md-nav" href="'+navi+'" target="_blank">🚗 카카오맵으로 길찾기</a>'
+      +(s.url ? '<a class="md-nav" href="'+s.url+'" target="_blank" style="background:var(--surface2);color:var(--text);margin-top:6px">🔍 상세정보 보기</a>' : '')
       +'<button class="md-close-btn" onclick="closeMobileDetail()">닫기</button>';
     document.getElementById('mobile-detail').classList.add('open');
   } else {
     document.getElementById('detail-panel-content').innerHTML =
-      html+'<a class="d-nav-btn" href="'+navi+'" target="_blank">🚗 카카오맵으로 길찾기</a>';
+      html
+      +'<a class="d-nav-btn" href="'+navi+'" target="_blank">🚗 카카오맵으로 길찾기</a>'
+      +(s.url ? '<a class="d-nav-btn" href="'+s.url+'" target="_blank" style="background:var(--surface2);color:var(--text);margin-top:4px">🔍 상세정보 보기</a>' : '');
     document.getElementById('detail-panel').classList.add('open');
   }
 }
@@ -966,45 +984,63 @@ function setSummary(countId, minId, avgId, priced) {
 }
 
 function cardHTML(s, i, minP) {
+  const isCharge = (currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
   const {lat,lng} = s.type==='kakao' ? {lat:s.lat,lng:s.lng} : resolveLatLng(s);
-  const dist=haversine(userLat,userLng,lat,lng);
-  const cheap=s.price===minP;
-  const brand=BRAND_MAP[s.brand]||s.brand||'기타';
-  return '<div class="station-card'+(cheap?' cheapest':'')+'" onclick="cardTap(\''+s.id+'\','+lat+','+lng+')">'
+  const dist = haversine(userLat,userLng,lat,lng);
+  const cheap = !isCharge && s.price===minP && minP>0;
+  const brand = BRAND_MAP[s.brand]||s.brand||'기타';
+
+  // 충전소 타입 아이콘
+  const typeIcon = currentType==='EV' ? '⚡' : currentType==='EV_FAST' ? '🔴' : currentType==='H2' ? '🔵' : '';
+  const rankLabel = isCharge
+    ? (typeIcon + ' ' + (i+1)+'위')
+    : (cheap ? '🏆 최저가' : '#'+(i+1));
+  const cardClass = 'station-card' + (cheap?' cheapest':'') + (isCharge?' charge-card':'');
+
+  return '<div class="'+cardClass+'" onclick="cardTap(\''+s.id+'\','+lat+','+lng+')">'
     +'<div class="card-row1">'
-    +'<span class="card-rank">'+(cheap?'🏆 최저가':'#'+(i+1))+'</span>'
+    +'<span class="card-rank">'+rankLabel+'</span>'
     +'<div class="card-name">'+s.name+'</div>'
-    +(s.price>0
+    +(isCharge
+      ? '<div class="card-price" style="font-size:11px;color:var(--green);white-space:nowrap">충전가능</div>'
+      : s.price>0
         ? '<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>'
-        : s.type==='kakao'
-          ? '<div class="card-price" style="font-size:12px;color:var(--green)">충전가능</div>'
-          : '')
+        : '')
     +'</div>'
     +'<div class="card-row2">'
     +'<span>📍 '+distText(dist)+'</span>'
-    +'<span>🏷 '+brand+'</span>'
-    +(s.selfYn==='Y'?'<span>🤖 셀프</span>':'')
+    +(isCharge
+      ? '<span>📌 '+(s.address||'주소 미상')+'</span>'
+      : '<span>🏷 '+brand+'</span>'+(s.selfYn==='Y'?'<span>🤖 셀프</span>':''))
     +'</div></div>';
 }
 
 function renderList(list) {
-  const priced = list.filter(s=>s.price>0).sort((a,b)=>a.price-b.price);
-  const empty  = '<div class="empty-state"><div class="big">🔍</div>주변 주유소가 없습니다.</div>';
-  const html   = priced.length ? priced.map((s,i)=>cardHTML(s,i,priced[0].price)).join('') : empty;
+  const isCharge = (currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
+  const emptyMsg = isCharge ? '이 근처에 충전소가 없습니다.' : '주변 주유소가 없습니다.';
+  const empty = '<div class="empty-state"><div class="big">🔍</div>'+emptyMsg+'</div>';
 
-  // 데스크탑 사이드바
-  document.getElementById('station-list').innerHTML = html;
-  const fCode2 = currentType;
-  if (fCode2==='EV'||fCode2==='H2') {
-    ['sum-count','m-sum-count'].forEach(id=>{document.getElementById(id).textContent=stations.length+'개';});
-    ['sum-min','m-sum-min','sum-avg','m-sum-avg'].forEach(id=>{document.getElementById(id).textContent='—';});
+  let html;
+  if (isCharge) {
+    // 전기/수소: 거리순으로 전체 표시 (가격 필터 없음)
+    const sorted = [...list].sort((a,b)=>(a.dist||0)-(b.dist||0));
+    html = sorted.length ? sorted.map((s,i)=>cardHTML(s,i,0)).join('') : empty;
+    ['sum-count','m-sum-count'].forEach(id=>{
+      document.getElementById(id).textContent = sorted.length+'개';
+    });
+    ['sum-min','m-sum-min','sum-avg','m-sum-avg'].forEach(id=>{
+      document.getElementById(id).textContent = '—';
+    });
   } else {
+    // 주유소: 가격순 표시
+    const priced = list.filter(s=>s.price>0).sort((a,b)=>a.price-b.price);
+    html = priced.length ? priced.map((s,i)=>cardHTML(s,i,priced[0].price)).join('') : empty;
     setSummary('sum-count','sum-min','sum-avg', priced);
+    setSummary('m-sum-count','m-sum-min','m-sum-avg', priced);
   }
 
-  // 모바일 바텀시트
-  document.getElementById('mobile-list').innerHTML = html;
-  if (fCode2!=='EV'&&fCode2!=='H2') { setSummary('m-sum-count','m-sum-min','m-sum-avg', priced); }
+  document.getElementById('station-list').innerHTML = html;
+  document.getElementById('mobile-list').innerHTML  = html;
 }
 
 function cardTap(id, lat, lng) {
@@ -1012,9 +1048,14 @@ function cardTap(id, lat, lng) {
   map.setLevel(3);
   const s = stations.find(x=>x.id===id);
   if (!s) return;
-  const priced = stations.filter(x=>x.price>0);
-  const minP   = priced.length?Math.min(...priced.map(x=>x.price)):0;
-  openDetail(s, s.price===minP&&minP>0);
+  const isCharge = (currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
+  if (isCharge) {
+    openDetail(s, false);
+  } else {
+    const priced = stations.filter(x=>x.price>0);
+    const minP   = priced.length?Math.min(...priced.map(x=>x.price)):0;
+    openDetail(s, s.price===minP&&minP>0);
+  }
 }
 
 /* ══ 내 위치 ══ */
@@ -1053,11 +1094,13 @@ document.getElementById('type-tabs').addEventListener('click', e => {
 
   // 유종 select: GAS일 때만 표시
   document.getElementById('fuel-type').classList.toggle('hidden', type !== 'GAS');
+  // 반경 select는 항상 표시
 
   // 로고 이모지 변경
   document.querySelector('.logo').innerHTML =
-    type === 'EV' ? '⚡ <span>전기</span>충전소'
-    : type === 'H2' ? '🔵 <span>수소</span>충전소'
+    type === 'EV'      ? '⚡ <span>전기</span>충전소'
+    : type === 'EV_FAST' ? '🔴 <span>급속</span>충전소'
+    : type === 'H2'    ? '🔵 <span>수소</span>충전소'
     : '⛽ <span>최저가</span>';
 
   loadStations();
@@ -1067,13 +1110,15 @@ document.getElementById('type-tabs').addEventListener('click', e => {
 async function loadStations() {
   // 탭 타입에 따라 fuelCode 결정
   let fuelCode;
-  if (currentType === 'EV') fuelCode = 'EV';
+  if (currentType === 'EV')      fuelCode = 'EV';
+  else if (currentType === 'EV_FAST') fuelCode = 'EV_FAST';
   else if (currentType === 'H2') fuelCode = 'H2';
   else fuelCode = document.getElementById('fuel-type').value;
 
   const radius = document.getElementById('radius-sel').value;
-  const loadMsg = currentType==='EV' ? '⚡ 전기충전소 검색 중...'
-                : currentType==='H2' ? '🔵 수소충전소 검색 중...'
+  const loadMsg = currentType==='EV'      ? '⚡ 전기충전소 검색 중...'
+                : currentType==='EV_FAST' ? '🔴 급속충전소 검색 중...'
+                : currentType==='H2'      ? '🔵 수소충전소 검색 중...'
                 : '⛽ 주유소 정보를 불러오는 중...';
   setLoading(true, loadMsg);
   closeDetailPanel(); closeMobileDetail();
@@ -1081,7 +1126,9 @@ async function loadStations() {
     stations = await fetchStations(userLat, userLng, radius, fuelCode);
     renderMarkers(stations);
     renderList(stations);
-    const countLabel = currentType==='EV' ? '전기충전소' : currentType==='H2' ? '수소충전소' : '주유소';
+    const countLabel = currentType==='EV' ? '전기충전소'
+                    : currentType==='EV_FAST' ? '급속충전소'
+                    : currentType==='H2' ? '수소충전소' : '주유소';
     showToast(stations.length+'개 '+countLabel+' 발견!', '✅');
   } catch(err) {
     console.error(err);
