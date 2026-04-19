@@ -361,24 +361,30 @@
       .bs-handle {
         flex-shrink: 0;
         display: flex; align-items: center; justify-content: center;
-        padding: 10px 0 5px;
+        padding: 14px 0 12px;
         cursor: grab;
+        /* 터치 영역 확장 */
+        touch-action: none;
       }
       .bs-handle:active { cursor: grabbing; }
       .bs-handle::before {
         content: '';
-        width: 38px; height: 4px;
-        background: var(--border);
-        border-radius: 2px;
+        width: 48px; height: 5px;
+        background: var(--muted);
+        border-radius: 3px;
+        opacity: .6;
       }
 
-      /* 시트 요약 */
+      /* 요약 영역도 드래그 가능하게 */
       .bs-summary {
         flex-shrink: 0;
         display: flex; gap: 8px;
-        padding: 0 14px 10px;
+        padding: 0 14px 12px;
+        cursor: grab;
+        touch-action: none;
       }
-      .bs-summary .s-pill { background: var(--surface2); border: none; }
+      .bs-summary:active { cursor: grabbing; }
+      .bs-summary .s-pill { background: var(--surface2); border: none; pointer-events: none; }
 
       /* 시트 목록 */
       .bs-list {
@@ -579,7 +585,7 @@
 <!-- 바텀 시트 -->
 <div id="bottom-sheet">
   <div class="bs-handle" id="bs-handle"></div>
-  <div class="bs-summary">
+  <div class="bs-summary" id="bs-summary">
     <div class="s-pill"><div class="v" id="m-sum-count">—</div><div class="l">검색</div></div>
     <div class="s-pill"><div class="v" id="m-sum-min">—</div><div class="l">최저가</div></div>
     <div class="s-pill"><div class="v" id="m-sum-avg">—</div><div class="l">평균가</div></div>
@@ -655,10 +661,16 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
 
   window.initSheet = () => { setH(PEEK(), false); };
 
-  const handle = document.getElementById('bs-handle');
+  const handle  = document.getElementById('bs-handle');
+  const summary = document.getElementById('bs-summary');
+
+  function isDragTarget(target) {
+    return handle.contains(target) || summary.contains(target);
+  }
 
   function onStart(e) {
     if (!isMobile()) return;
+    if (!isDragTarget(e.target)) return;
     dragging = true;
     startY = e.touches ? e.touches[0].clientY : e.clientY;
     startH = curH;
@@ -678,9 +690,11 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
   }
 
   handle.addEventListener('touchstart', onStart, {passive:true});
+  summary.addEventListener('touchstart', onStart, {passive:true});
   window.addEventListener('touchmove', onMove, {passive:false});
   window.addEventListener('touchend', onEnd);
   handle.addEventListener('mousedown', onStart);
+  summary.addEventListener('mousedown', onStart);
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onEnd);
 })();
