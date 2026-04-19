@@ -360,30 +360,46 @@
       /* 드래그 핸들 */
       .bs-handle {
         flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
-        padding: 14px 0 12px;
-        cursor: grab;
-        /* 터치 영역 확장 */
-        touch-action: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 12px 0 10px;
+        cursor: pointer;
+        touch-action: manipulation;
+        user-select: none;
+        -webkit-user-select: none;
       }
-      .bs-handle:active { cursor: grabbing; }
       .bs-handle::before {
         content: '';
         width: 48px; height: 5px;
         background: var(--muted);
         border-radius: 3px;
-        opacity: .6;
+        opacity: .5;
+      }
+      /* 화살표 아이콘 */
+      .bs-handle::after {
+        content: '︿';
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1;
+        transition: transform .3s ease;
+      }
+      .bs-handle.open::after {
+        transform: rotate(180deg);
       }
 
-      /* 요약 영역도 드래그 가능하게 */
+      /* 요약 영역도 탭 가능 */
       .bs-summary {
         flex-shrink: 0;
         display: flex; gap: 8px;
         padding: 0 14px 12px;
-        cursor: grab;
-        touch-action: none;
+        cursor: pointer;
+        touch-action: manipulation;
+        user-select: none;
+        -webkit-user-select: none;
       }
-      .bs-summary:active { cursor: grabbing; }
       .bs-summary .s-pill { background: var(--surface2); border: none; pointer-events: none; }
 
       /* 시트 목록 */
@@ -644,59 +660,39 @@ function distText(m) { return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)
 
 /* ══ 모바일 바텀시트 드래그 ══ */
 (function initBottomSheet() {
-  const sheet = document.getElementById('bottom-sheet');
-  const PEEK  = () => Math.round(window.innerHeight * 0.30);
-  const FULL  = () => Math.round(window.innerHeight * 0.75);
-  let curH = PEEK, dragging = false, startY = 0, startH = 0;
+  const sheet   = document.getElementById('bottom-sheet');
+  const handle  = document.getElementById('bs-handle');
+  const summary = document.getElementById('bs-summary');
+
+  const PEEK = () => Math.round(window.innerHeight * 0.30);
+  const FULL = () => Math.round(window.innerHeight * 0.75);
+  let isOpen = false;
 
   function setH(h, anim=true) {
-    h = Math.max(PEEK(), Math.min(FULL(), h));
-    curH = h;
-    sheet.style.transition = anim ? 'height .32s cubic-bezier(.32,1,.34,1)' : 'none';
+    sheet.style.transition = anim ? 'height .35s cubic-bezier(.32,1,.34,1)' : 'none';
     sheet.style.height = h + 'px';
     document.documentElement.style.setProperty('--sheet-peek', h + 'px');
     document.getElementById('my-loc-btn').style.bottom = (h + 14) + 'px';
     document.getElementById('fab-refresh').style.bottom = (h + 14) + 'px';
   }
 
-  window.initSheet = () => { setH(PEEK(), false); };
-
-  const handle  = document.getElementById('bs-handle');
-  const summary = document.getElementById('bs-summary');
-
-  function isDragTarget(target) {
-    return handle.contains(target) || summary.contains(target);
+  function toggle() {
+    isOpen = !isOpen;
+    setH(isOpen ? FULL() : PEEK(), true);
+    // 핸들 화살표 방향 전환
+    handle.classList.toggle('open', isOpen);
   }
 
-  function onStart(e) {
-    if (!isMobile()) return;
-    if (!isDragTarget(e.target)) return;
-    dragging = true;
-    startY = e.touches ? e.touches[0].clientY : e.clientY;
-    startH = curH;
-    sheet.style.transition = 'none';
-  }
-  function onMove(e) {
-    if (!dragging) return;
-    e.preventDefault();
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-    setH(startH - (y - startY), false);
-  }
-  function onEnd() {
-    if (!dragging) return;
-    dragging = false;
-    const mid = (PEEK() + FULL()) / 2;
-    setH(curH > mid ? FULL() : PEEK(), true);
-  }
+  window.initSheet = () => {
+    isOpen = false;
+    setH(PEEK(), false);
+  };
 
-  handle.addEventListener('touchstart', onStart, {passive:true});
-  summary.addEventListener('touchstart', onStart, {passive:true});
-  window.addEventListener('touchmove', onMove, {passive:false});
-  window.addEventListener('touchend', onEnd);
-  handle.addEventListener('mousedown', onStart);
-  summary.addEventListener('mousedown', onStart);
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onEnd);
+  // 탭으로 토글 (핸들 + 요약 영역)
+  handle.addEventListener('click', toggle);
+  summary.addEventListener('click', toggle);
+  handle.addEventListener('touchend', (e) => { e.preventDefault(); toggle(); }, {passive:false});
+  summary.addEventListener('touchend', (e) => { e.preventDefault(); toggle(); }, {passive:false});
 })();
 
 /* ══ 모바일 상세 시트 ══ */
