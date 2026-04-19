@@ -170,6 +170,29 @@
     .map-label.h2{background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff}
     .map-label.h2::after{border-color:var(--blue) transparent transparent}
 
+    /* ── 충전소 전용: 아이콘 원형 마커 ── */
+    .map-dot{
+      width:36px;height:36px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:16px;cursor:pointer;
+      box-shadow:0 3px 12px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.25);
+      transition:transform .12s;
+      position:relative;
+    }
+    .map-dot:active{transform:scale(1.15)}
+    .map-dot.ev     {background:linear-gradient(135deg,var(--green),#00897B)}
+    .map-dot.ev-fast{background:linear-gradient(135deg,var(--orange),var(--red))}
+    .map-dot.h2     {background:linear-gradient(135deg,var(--blue),var(--purple))}
+    /* 아래 꼭지 */
+    .map-dot::after{
+      content:'';position:absolute;bottom:-5px;left:50%;
+      transform:translateX(-50%);
+      border-width:5px 4px 0;border-style:solid;
+    }
+    .map-dot.ev::after     {border-color:var(--green) transparent transparent}
+    .map-dot.ev-fast::after{border-color:var(--orange) transparent transparent}
+    .map-dot.h2::after     {border-color:var(--blue)   transparent transparent}
+
     /* ════ BOTTOM SHEET ════ */
     #bottom-sheet{
       display:none;flex-direction:column;
@@ -736,10 +759,18 @@ function renderMarkers(list){
     else if(currentType==='H2'){cls='h2';priceText='🔵 수소'}
     else{cls=cheap?'cheap':'normal';priceText=s.price>0?s.price.toLocaleString()+'원':'—'}
     const el=document.createElement('div');
-    el.className='map-label '+cls;
-    el.innerHTML='<div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div>';
+    if(currentType==='EV'){
+      // 전기충전소: 아이콘 원형 마커 (개수 많아서 겹침 방지)
+      el.className='map-dot ev';
+      el.innerHTML='⚡';
+      el.title=s.name;
+    } else {
+      // 주유소 / 급속 / 수소: 이름+라벨 표시
+      el.className='map-label '+cls;
+      el.innerHTML='<div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div>';
+    }
     el.addEventListener('click',()=>openDetail(s,cheap));
-    const ov=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(lat,lng),content:el,yAnchor:1.35,zIndex:cheap?5:3});
+    const ov=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(lat,lng),content:el,yAnchor:currentType==='EV'?1.2:1.35,zIndex:cheap?5:3});
     ov.setMap(map);overlays.push(ov);
   })
 }
