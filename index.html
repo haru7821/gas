@@ -269,6 +269,10 @@
     .map-label.cheap::after  { border-color: var(--red)  transparent transparent; }
     .map-label.normal { background: var(--blue); color: #fff; }
     .map-label.normal::after { border-color: var(--blue) transparent transparent; }
+    .map-label.ev     { background: #00C853; color: #fff; }
+    .map-label.ev::after     { border-color: #00C853 transparent transparent; }
+    .map-label.h2     { background: #6200EA; color: #fff; }
+    .map-label.h2::after     { border-color: #6200EA transparent transparent; }
     .map-label .sname { font-size: 10px; opacity: .85; }
     .map-label .sprice { font-size: 12px; font-weight: 900; }
 
@@ -550,15 +554,17 @@
     <div class="logo">⛽ <span>최저가</span> 주유소</div>
     <div class="header-right">
       <select id="fuel-type">
-        <option value="B027">휘발유</option>
-        <option value="D047">경유</option>
-        <option value="K010">등유</option>
-        <option value="C004">LPG</option>
+        <option value="B027">⛽ 휘발유</option>
+        <option value="D047">🚛 경유</option>
+        <option value="C004">💨 LPG</option>
+        <option value="EV">⚡ 전기</option>
+        <option value="H2">🔵 수소</option>
       </select>
       <select id="radius-sel">
         <option value="3000">3km</option>
-        <option value="5000" selected>5km</option>
+        <option value="5000">5km</option>
         <option value="10000">10km</option>
+        <option value="20000" selected>20km</option>
       </select>
       <button class="hdr-btn primary" id="refresh-btn">🔄 새로고침</button>
     </div>
@@ -631,8 +637,9 @@
 
 <script>
 /* ══ 설정 ══ */
-const OPINET_KEY = 'F260418102';
-const WORKER_URL = 'https://opinet-proxy.cnh7821.workers.dev';
+const OPINET_KEY   = 'F260418102';
+const KAKAO_REST   = 'fccb7a0e34d796a0dd19e96dd2ff767f';
+const WORKER_URL   = 'https://opinet-proxy.cnh7821.workers.dev';
 const BRAND_MAP  = {
   SKE:'SK에너지', GSC:'GS칼텍스', HDO:'HD현대오일뱅크',
   SOL:'S-OIL', RTE:'자영알뜰', RTX:'고속도로알뜰',
@@ -769,7 +776,47 @@ function initMap(lat, lng) {
 }
 
 /* ══ API ══ */
+/* ══ 카카오 로컬 API — 전기/수소 충전소 ══ */
+async function fetchKakaoPlaces(lat, lng, radius, keyword) {
+  const all = [];
+  for (let page = 1; page <= 3; page++) {
+    const url = 'https://dapi.kakao.com/v2/local/search/keyword.json'
+      + '?query='+encodeURIComponent(keyword)
+      + '&x='+lng+'&y='+lat
+      + '&radius='+radius
+      + '&sort=distance&page='+page+'&size=15';
+    const res = await fetch(url, { headers: { Authorization: 'KakaoAK '+KAKAO_REST } });
+    if (!res.ok) throw new Error('카카오 API 오류 '+res.status);
+    const data = await res.json();
+    all.push(...(data.documents||[]));
+    if (data.meta?.is_end) break;
+  }
+  const seen = new Set();
+  return all
+    .filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; })
+    .map(p => ({
+      id:      p.id,
+      name:    p.place_name,
+      brand:   '',
+      address: p.road_address_name || p.address_name || '',
+      price:   0,
+      lat:     parseFloat(p.y),
+      lng:     parseFloat(p.x),
+      gisX:    0, gisY: 0,
+      selfYn:  'N',
+      tel:     p.phone || '',
+      url:     p.place_url || '',
+      dist:    parseFloat(p.distance)||0,
+      type:    'kakao',
+    }));
+}
+
 async function fetchStations(lat, lng, radius, fuelCode) {
+  // 전기/수소는 카카오 로컬 API 사용
+  if (fuelCode === 'EV') return fetchKakaoPlaces(lat, lng, radius, '전기차충전소');
+  if (fuelCode === 'H2') return fetchKakaoPlaces(lat, lng, radius, '수소충전소');
+
+  // 일반 주유소는 오피넷 API
   const k = wgs84ToKatec(lat, lng);
   const url = 'https://www.opinet.co.kr/api/aroundAll.do'
     + '?code='+OPINET_KEY+'&x='+k.x+'&y='+k.y
@@ -789,27 +836,50 @@ async function fetchStations(lat, lng, radius, fuelCode) {
     gisY:    parseFloat(o.querySelector('GIS_Y_COOR')?.textContent||'0'),
     selfYn:  o.querySelector('SELF_YN')?.textContent   || 'N',
     tel:     o.querySelector('TEL')?.textContent       || '',
+    type:    'opinet',
   }));
 }
 
 /* ══ 마커 ══ */
 function clearOverlays(){ overlays.forEach(o=>o.setMap(null)); overlays=[]; }
+function resolveStation(s) {
+  if (s.type === 'kakao') return { lat: s.lat, lng: s.lng };
+  return resolveLatLng(s);
+}
+
 function renderMarkers(list) {
   clearOverlays();
+  const fuelCode = document.getElementById('fuel-type').value;
+  const isEV = fuelCode === 'EV';
+  const isH2 = fuelCode === 'H2';
   const priced = list.filter(s=>s.price>0);
   const minP   = priced.length ? Math.min(...priced.map(s=>s.price)) : 0;
-  list.forEach(s => {
-    const {lat,lng}=resolveLatLng(s);
+
+  list.forEach((s,i) => {
+    const {lat,lng} = resolveStation(s);
     if(!lat||!lng) return;
-    const cheap = s.price===minP&&minP>0;
+    const cheap = s.price===minP && minP>0;
+
+    let cls, icon, priceText;
+    if (isEV) {
+      cls = 'ev'; icon = '⚡'; priceText = '전기충전';
+    } else if (isH2) {
+      cls = 'h2'; icon = '🔵'; priceText = '수소충전';
+    } else {
+      cls = cheap ? 'cheap' : 'normal';
+      icon = '';
+      priceText = s.price>0 ? s.price.toLocaleString()+'원' : '—';
+    }
+
     const el = document.createElement('div');
-    el.className = 'map-label '+(cheap?'cheap':'normal');
-    el.innerHTML = '<div class="sname">'+s.name+'</div>'
-      +'<div class="sprice">'+(s.price>0?s.price.toLocaleString()+'원':'—')+'</div>';
+    el.className = 'map-label '+cls;
+    el.innerHTML = '<div class="sname">'+(icon?icon+' ':'')+s.name+'</div>'
+      +'<div class="sprice">'+priceText+'</div>';
     el.addEventListener('click', ()=> openDetail(s, cheap));
     const ov = new kakao.maps.CustomOverlay({
       position: new kakao.maps.LatLng(lat,lng),
-      content: el, yAnchor:1.3, zIndex: cheap?5:3,
+      content: el, yAnchor:1.3,
+      zIndex: cheap?5:3,
     });
     ov.setMap(map); overlays.push(ov);
   });
@@ -817,7 +887,7 @@ function renderMarkers(list) {
 
 /* ══ 상세 열기 ══ */
 function openDetail(s, cheap) {
-  const {lat,lng}=resolveLatLng(s);
+  const {lat,lng} = s.type==='kakao' ? {lat:s.lat,lng:s.lng} : resolveLatLng(s);
   const dist=haversine(userLat,userLng,lat,lng);
   const brand=BRAND_MAP[s.brand]||s.brand||'기타';
   const navi='https://map.kakao.com/link/to/'+encodeURIComponent(s.name)+','+lat+','+lng;
@@ -854,7 +924,7 @@ function setSummary(countId, minId, avgId, priced) {
 }
 
 function cardHTML(s, i, minP) {
-  const {lat,lng}=resolveLatLng(s);
+  const {lat,lng} = s.type==='kakao' ? {lat:s.lat,lng:s.lng} : resolveLatLng(s);
   const dist=haversine(userLat,userLng,lat,lng);
   const cheap=s.price===minP;
   const brand=BRAND_MAP[s.brand]||s.brand||'기타';
@@ -862,7 +932,7 @@ function cardHTML(s, i, minP) {
     +'<div class="card-row1">'
     +'<span class="card-rank">'+(cheap?'🏆 최저가':'#'+(i+1))+'</span>'
     +'<div class="card-name">'+s.name+'</div>'
-    +'<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>'
+    +(s.price>0 ? '<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>' : (s.type==='kakao'?'':''))
     +'</div>'
     +'<div class="card-row2">'
     +'<span>📍 '+distText(dist)+'</span>'
@@ -878,11 +948,17 @@ function renderList(list) {
 
   // 데스크탑 사이드바
   document.getElementById('station-list').innerHTML = html;
-  setSummary('sum-count','sum-min','sum-avg', priced);
+  const fCode2 = document.getElementById('fuel-type').value;
+  if (fCode2==='EV'||fCode2==='H2') {
+    ['sum-count','m-sum-count'].forEach(id=>{document.getElementById(id).textContent=stations.length+'개';});
+    ['sum-min','m-sum-min','sum-avg','m-sum-avg'].forEach(id=>{document.getElementById(id).textContent='—';});
+  } else {
+    setSummary('sum-count','sum-min','sum-avg', priced);
+  }
 
   // 모바일 바텀시트
   document.getElementById('mobile-list').innerHTML = html;
-  setSummary('m-sum-count','m-sum-min','m-sum-avg', priced);
+  if (fCode2!=='EV'&&fCode2!=='H2') setSummary('m-sum-count','m-sum-min','m-sum-avg', priced);
 }
 
 function cardTap(id, lat, lng) {
@@ -926,7 +1002,9 @@ async function loadStations() {
     stations = await fetchStations(userLat, userLng, radius, fuelCode);
     renderMarkers(stations);
     renderList(stations);
-    showToast(stations.filter(s=>s.price>0).length+'개 주유소 발견!', '✅');
+    const fCode = document.getElementById('fuel-type').value;
+    const countLabel = fCode==='EV' ? '⚡ 전기충전소' : fCode==='H2' ? '🔵 수소충전소' : '⛽ 주유소';
+    showToast(stations.length+'개 '+countLabel+' 발견!', '✅');
   } catch(err) {
     console.error(err);
     showToast(err.message, '❌', 4000);
