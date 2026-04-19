@@ -149,26 +149,23 @@
     .station-card {
       background: var(--bg);
       border: 1px solid var(--border);
+      border-left: 4px solid var(--blue);
       border-radius: var(--radius);
       padding: 11px 13px;
       cursor: pointer;
-      transition: border-color .15s, transform .1s;
+      transition: border-color .15s;
       position: relative;
       overflow: hidden;
-      min-height: 68px;
+      min-height: 64px;
       flex-shrink: 0;
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
       -webkit-user-select: none; user-select: none;
     }
-    .station-card::before {
-      content: '';
-      position: absolute;
-      left: 0; top: 0; bottom: 0;
-      width: 3px;
-      background: var(--blue);
-    }
-    .station-card.cheapest::before { background: var(--red); }
-    .station-card:hover { border-color: var(--accent); transform: translateX(2px); }
-    .station-card:active { transform: scale(.98); }
+    .station-card.cheapest { border-left-color: var(--red); }
+    .station-card:hover { border-color: var(--accent); border-left-color: var(--accent); }
+    .station-card:active { opacity: .85; }
 
     .card-row1 { display: flex; align-items: center; gap: 7px; min-height: 28px; }
     .card-name { font-size: 13px; font-weight: 700; flex: 1; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -401,12 +398,18 @@
       /* 모바일 카드 */
       .station-card {
         background: var(--surface2);
-        border-color: transparent;
-        min-height: 68px;
+        border: none;
+        border-left: 4px solid var(--blue);
+        border-radius: var(--radius);
+        min-height: 64px;
         flex-shrink: 0;
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
       }
-      .station-card:hover { transform: none; border-color: transparent; }
-      .station-card:active { transform: scale(.98); }
+      .station-card.cheapest { border-left-color: var(--red); }
+      .station-card:hover { opacity: 1; }
+      .station-card:active { opacity: .82; }
 
       /* 모바일 상세 시트 */
       #mobile-detail {
