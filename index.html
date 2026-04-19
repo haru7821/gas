@@ -68,13 +68,47 @@
     }
     .logo {
       font-family: 'Bebas Neue', sans-serif;
-      font-size: 22px;
+      font-size: 20px;
       letter-spacing: 1px;
       color: var(--accent);
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .logo span { color: var(--text); }
-    .header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+    /* ── 충전소 타입 탭 ── */
+    .type-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 3px;
+      flex-shrink: 0;
+    }
+    .type-tab {
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 7px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .18s;
+      white-space: nowrap;
+    }
+    .type-tab.active {
+      background: var(--accent);
+      color: #000;
+    }
+    .type-tab:not(.active):hover { color: var(--text); }
+
+    /* 유종 select: GAS 탭일 때만 표시 */
+    .fuel-sel { display: inline-block; }
+    .fuel-sel.hidden { display: none; }
+
+    .header-right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
     select, .hdr-btn {
       font-family: 'Noto Sans KR', sans-serif;
@@ -297,10 +331,12 @@
         border-bottom: none;
         z-index: 200;
       }
-      .logo { font-size: 18px; }
-      .header-right { gap: 6px; }
-      select { font-size: 11px; padding: 5px 8px; border-radius: 18px; }
-      .hdr-btn { display: none; } /* 새로고침은 플로팅 버튼으로 대체 */
+      .logo { font-size: 16px; }
+      .type-tabs { gap: 3px; padding: 2px; }
+      .type-tab { font-size: 11px; padding: 5px 8px; }
+      .header-right { gap: 5px; }
+      select { font-size: 11px; padding: 4px 7px; border-radius: 16px; }
+      .hdr-btn { display: none; }
 
       /* 사이드바 → 완전 숨김 */
       #sidebar { display: none; }
@@ -551,14 +587,21 @@
 
   <!-- ── 헤더 (데스크탑: 고정 / 모바일: 지도 위 플로팅) ── -->
   <header id="header">
-    <div class="logo">⛽ <span>최저가</span> 주유소</div>
+    <div class="logo">⛽ <span>최저가</span></div>
+
+    <!-- 충전소 타입 탭 -->
+    <div class="type-tabs" id="type-tabs">
+      <button class="type-tab active" data-type="GAS">⛽ 주유소</button>
+      <button class="type-tab" data-type="EV">⚡ 전기</button>
+      <button class="type-tab" data-type="H2">🔵 수소</button>
+    </div>
+
     <div class="header-right">
-      <select id="fuel-type">
-        <option value="B027">⛽ 휘발유</option>
-        <option value="D047">🚛 경유</option>
-        <option value="C004">💨 LPG</option>
-        <option value="EV">⚡ 전기</option>
-        <option value="H2">🔵 수소</option>
+      <!-- 주유소 유종 (주유소 탭일 때만 표시) -->
+      <select id="fuel-type" class="fuel-sel">
+        <option value="B027">휘발유</option>
+        <option value="D047">경유</option>
+        <option value="C004">LPG</option>
       </select>
       <select id="radius-sel">
         <option value="3000">3km</option>
@@ -566,7 +609,7 @@
         <option value="10000">10km</option>
         <option value="20000" selected>20km</option>
       </select>
-      <button class="hdr-btn primary" id="refresh-btn">🔄 새로고침</button>
+      <button class="hdr-btn primary" id="refresh-btn">🔄</button>
     </div>
   </header>
 
@@ -849,9 +892,8 @@ function resolveStation(s) {
 
 function renderMarkers(list) {
   clearOverlays();
-  const fuelCode = document.getElementById('fuel-type').value;
-  const isEV = fuelCode === 'EV';
-  const isH2 = fuelCode === 'H2';
+  const isEV = currentType === 'EV';
+  const isH2 = currentType === 'H2';
   const priced = list.filter(s=>s.price>0);
   const minP   = priced.length ? Math.min(...priced.map(s=>s.price)) : 0;
 
@@ -932,7 +974,11 @@ function cardHTML(s, i, minP) {
     +'<div class="card-row1">'
     +'<span class="card-rank">'+(cheap?'🏆 최저가':'#'+(i+1))+'</span>'
     +'<div class="card-name">'+s.name+'</div>'
-    +(s.price>0 ? '<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>' : (s.type==='kakao'?'':''))
+    +(s.price>0
+        ? '<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>'
+        : s.type==='kakao'
+          ? '<div class="card-price" style="font-size:12px;color:var(--green)">충전가능</div>'
+          : '')
     +'</div>'
     +'<div class="card-row2">'
     +'<span>📍 '+distText(dist)+'</span>'
@@ -948,7 +994,7 @@ function renderList(list) {
 
   // 데스크탑 사이드바
   document.getElementById('station-list').innerHTML = html;
-  const fCode2 = document.getElementById('fuel-type').value;
+  const fCode2 = currentType;
   if (fCode2==='EV'||fCode2==='H2') {
     ['sum-count','m-sum-count'].forEach(id=>{document.getElementById(id).textContent=stations.length+'개';});
     ['sum-min','m-sum-min','sum-avg','m-sum-avg'].forEach(id=>{document.getElementById(id).textContent='—';});
@@ -958,7 +1004,7 @@ function renderList(list) {
 
   // 모바일 바텀시트
   document.getElementById('mobile-list').innerHTML = html;
-  if (fCode2!=='EV'&&fCode2!=='H2') setSummary('m-sum-count','m-sum-min','m-sum-avg', priced);
+  if (fCode2!=='EV'&&fCode2!=='H2') { setSummary('m-sum-count','m-sum-min','m-sum-avg', priced); }
 }
 
 function cardTap(id, lat, lng) {
@@ -992,18 +1038,50 @@ document.getElementById('fab-refresh').addEventListener('click', triggerRefresh)
 document.getElementById('fuel-type').addEventListener('change', loadStations);
 document.getElementById('radius-sel').addEventListener('change', loadStations);
 
+/* ── 탭 전환 로직 ── */
+let currentType = 'GAS'; // GAS | EV | H2
+
+document.getElementById('type-tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.type-tab');
+  if (!btn) return;
+  const type = btn.dataset.type;
+  if (type === currentType) return;
+  currentType = type;
+
+  // 탭 활성화
+  document.querySelectorAll('.type-tab').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+
+  // 유종 select: GAS일 때만 표시
+  document.getElementById('fuel-type').classList.toggle('hidden', type !== 'GAS');
+
+  // 로고 이모지 변경
+  document.querySelector('.logo').innerHTML =
+    type === 'EV' ? '⚡ <span>전기</span>충전소'
+    : type === 'H2' ? '🔵 <span>수소</span>충전소'
+    : '⛽ <span>최저가</span>';
+
+  loadStations();
+});
+
 /* ══ 메인 로드 ══ */
 async function loadStations() {
-  const fuelCode = document.getElementById('fuel-type').value;
-  const radius   = document.getElementById('radius-sel').value;
-  setLoading(true, '주유소 정보를 불러오는 중...');
+  // 탭 타입에 따라 fuelCode 결정
+  let fuelCode;
+  if (currentType === 'EV') fuelCode = 'EV';
+  else if (currentType === 'H2') fuelCode = 'H2';
+  else fuelCode = document.getElementById('fuel-type').value;
+
+  const radius = document.getElementById('radius-sel').value;
+  const loadMsg = currentType==='EV' ? '⚡ 전기충전소 검색 중...'
+                : currentType==='H2' ? '🔵 수소충전소 검색 중...'
+                : '⛽ 주유소 정보를 불러오는 중...';
+  setLoading(true, loadMsg);
   closeDetailPanel(); closeMobileDetail();
   try {
     stations = await fetchStations(userLat, userLng, radius, fuelCode);
     renderMarkers(stations);
     renderList(stations);
-    const fCode = document.getElementById('fuel-type').value;
-    const countLabel = fCode==='EV' ? '⚡ 전기충전소' : fCode==='H2' ? '🔵 수소충전소' : '⛽ 주유소';
+    const countLabel = currentType==='EV' ? '전기충전소' : currentType==='H2' ? '수소충전소' : '주유소';
     showToast(stations.length+'개 '+countLabel+' 발견!', '✅');
   } catch(err) {
     console.error(err);
