@@ -759,17 +759,24 @@ function renderMarkers(list){
     else{cls=cheap?'cheap':'normal';priceText=s.price>0?s.price.toLocaleString()+'원':'—'}
     const el=document.createElement('div');
     if(currentType==='EV'){
-      // 전기충전소: 아이콘 원형 마커 (개수 많아서 겹침 방지)
       el.className='map-dot ev';
       el.innerHTML='⚡';
       el.title=s.name;
     } else {
-      // 주유소 / 급속 / 수소: 이름+라벨 표시
       el.className='map-label '+cls;
       el.innerHTML='<div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div>';
     }
     el.addEventListener('click',()=>openDetail(s,cheap));
-    const ov=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(lat,lng),content:el,yAnchor:currentType==='EV'?1.2:1.35,zIndex:cheap?5:3});
+    // outerHTML 문자열로 전달 + 클릭은 window 함수로 처리
+    const sid=s.id.replace(/[^a-zA-Z0-9]/g,'_');
+    window['_tap_'+sid]=(()=>{const _s=s,_c=cheap;return()=>openDetail(_s,_c)})();
+    let contentStr;
+    if(currentType==='EV'){
+      contentStr='<div class="map-dot ev" title="'+s.name+'" onclick="window[\'_tap_'+sid+'\']()">⚡</div>';
+    } else {
+      contentStr='<div class="map-label '+cls+'" onclick="window[\'_tap_'+sid+'\']()"><div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div></div>';
+    }
+    const ov=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(lat,lng),content:contentStr,yAnchor:currentType==='EV'?1.2:1.35,zIndex:cheap?5:3});
     ov.setMap(map);overlays.push(ov);
   })
 }
