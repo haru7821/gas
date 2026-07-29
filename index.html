@@ -46,6 +46,7 @@
     #app{position:fixed;inset:0;z-index:1}
 
     /* ════ MAP ════ */
+    #map-wrap{position:absolute;inset:0}
     #map{position:absolute;inset:0;width:100%;height:100%}
 
     /* ════ TOP BAR ════ */
@@ -56,7 +57,9 @@
       display:flex;flex-direction:column;gap:10px;
       pointer-events:none;
     }
-    #topbar>*{pointer-events:auto}
+    /* 실제 컨트롤만 터치를 받고, 빈 공간은 지도로 통과시킨다 */
+    #topbar>*{pointer-events:none}
+    .logo,.type-tab,.topbar-controls{pointer-events:auto}
 
     /* 로고 + 컨트롤 행 */
     .topbar-row1{display:flex;align-items:center;gap:10px}
@@ -401,8 +404,8 @@
       #station-list .station-card{background:rgba(255,255,255,.03)}
       #station-list .station-card:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.2)}
 
-      /* 지도 */
-      #map-wrap{position:relative;overflow:hidden}
+      /* 지도 — 그리드 2행 2열에 배치 (사이드바 밑으로 깔리지 않도록) */
+      #map-wrap{position:relative;inset:auto;grid-row:2;grid-column:2;overflow:hidden}
       #map{width:100%;height:100%}
 
       /* 데스크탑 내 위치 버튼 */
@@ -528,7 +531,7 @@
 <div id="app">
 
   <!-- ── 지도 ── -->
-  <div id="map-wrap" style="position:absolute;inset:0">
+  <div id="map-wrap">
     <div id="map"></div>
     <button id="my-loc-btn-desk">📍</button>
     <div id="detail-panel">
@@ -629,6 +632,8 @@ function setLoading(show,msg){if(msg)document.getElementById('loading-msg').text
 let toastTimer;
 function showToast(msg,icon='ℹ️',dur=3000){document.getElementById('toast-msg').textContent=msg;document.getElementById('toast-icon').textContent=icon;document.getElementById('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>document.getElementById('toast').classList.remove('show'),dur)}
 function distText(m){return m<1000?Math.round(m)+'m':(m/1000).toFixed(1)+'km'}
+const ESC_MAP={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>ESC_MAP[c])}
 
 /* ═══ 바텀 시트 토글 ═══ */
 (function(){
@@ -734,9 +739,12 @@ async function fetchStations(lat,lng,radius,fuelCode){
   const res=await fetch(WORKER_URL+'?url='+encodeURIComponent(url));
   if(!res.ok)throw new Error('프록시 오류 '+res.status);
   const xml=new DOMParser().parseFromString(await res.text(),'text/xml');
-  const oils=[...xml.querySelectorAll('OIL')];
-  if(!oils.length)throw new Error('오피넷: 데이터 없음');
-  return oils.map(o=>({id:o.querySelector('UNI_ID')?.textContent||'',name:o.querySelector('OS_NM')?.textContent||'이름 없음',brand:o.querySelector('POLL_DIV_CO')?.textContent||'',address:o.querySelector('VAN_ADR')?.textContent||'',price:parseInt(o.querySelector('PRICE')?.textContent||'0',10),gisX:parseFloat(o.querySelector('GIS_X_COOR')?.textContent||'0'),gisY:parseFloat(o.querySelector('GIS_Y_COOR')?.textContent||'0'),selfYn:o.querySelector('SELF_YN')?.textContent||'N',tel:o.querySelector('TEL')?.textContent||'',type:'opinet'}))
+  if(xml.querySelector('parsererror'))throw new Error('오피넷 응답을 해석할 수 없습니다');
+  // 오피넷은 오류도 200으로 내려주므로 결과 코드를 확인한다
+  const rc=xml.querySelector('RESULT_CODE')?.textContent?.trim();
+  if(rc&&rc!=='00')throw new Error('오피넷 오류 ('+rc+') '+(xml.querySelector('RESULT_MSG')?.textContent||''));
+  // 결과 0건은 오류가 아니라 빈 목록으로 처리한다
+  return [...xml.querySelectorAll('OIL')].map(o=>({id:o.querySelector('UNI_ID')?.textContent||'',name:o.querySelector('OS_NM')?.textContent||'이름 없음',brand:o.querySelector('POLL_DIV_CO')?.textContent||'',address:o.querySelector('VAN_ADR')?.textContent||'',price:parseInt(o.querySelector('PRICE')?.textContent||'0',10),gisX:parseFloat(o.querySelector('GIS_X_COOR')?.textContent||'0'),gisY:parseFloat(o.querySelector('GIS_Y_COOR')?.textContent||'0'),selfYn:o.querySelector('SELF_YN')?.textContent||'N',tel:o.querySelector('TEL')?.textContent||'',type:'opinet'}))
 }
 
 /* ═══ 마커 ═══ */
@@ -745,9 +753,7 @@ function resolveStation(s){return s.type==='kakao'?{lat:s.lat,lng:s.lng}:resolve
 
 function renderMarkers(list){
   clearOverlays();
-  const isCharge=(currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
-  const priced=list.filter(s=>s.price>0);
-  const minP=priced.length?Math.min(...priced.map(s=>s.price)):0;
+  const minP=minPrice(list);
   list.forEach(s=>{
     const {lat,lng}=resolveStation(s);
     if(!lat||!lng)return;
@@ -757,29 +763,30 @@ function renderMarkers(list){
     else if(currentType==='EV_FAST'){cls='ev-fast';priceText='🔴 급속'}
     else if(currentType==='H2'){cls='h2';priceText='🔵 수소'}
     else{cls=cheap?'cheap':'normal';priceText=s.price>0?s.price.toLocaleString()+'원':'—'}
-    const el=document.createElement('div');
-    if(currentType==='EV'){
-      el.className='map-dot ev';
-      el.innerHTML='⚡';
-      el.title=s.name;
-    } else {
-      el.className='map-label '+cls;
-      el.innerHTML='<div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div>';
-    }
-    el.addEventListener('click',()=>openDetail(s,cheap));
-    // outerHTML 문자열로 전달 + 클릭은 window 함수로 처리
-    const sid=s.id.replace(/[^a-zA-Z0-9]/g,'_');
-    window['_tap_'+sid]=(()=>{const _s=s,_c=cheap;return()=>openDetail(_s,_c)})();
-    let contentStr;
-    if(currentType==='EV'){
-      contentStr='<div class="map-dot ev" title="'+s.name+'" onclick="window[\'_tap_'+sid+'\']()">⚡</div>';
-    } else {
-      contentStr='<div class="map-label '+cls+'" onclick="window[\'_tap_'+sid+'\']()"><div class="sname">'+s.name+'</div><div class="sprice">'+priceText+'</div></div>';
-    }
+    // 클릭은 #map 위임 핸들러가 data-sid 로 처리한다
+    const contentStr=currentType==='EV'
+      ?'<div class="map-dot ev" data-sid="'+esc(s.id)+'" title="'+esc(s.name)+'">⚡</div>'
+      :'<div class="map-label '+cls+'" data-sid="'+esc(s.id)+'"><div class="sname">'+esc(s.name)+'</div><div class="sprice">'+esc(priceText)+'</div></div>';
     const ov=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(lat,lng),content:contentStr,yAnchor:currentType==='EV'?1.2:1.35,zIndex:cheap?5:3});
     ov.setMap(map);overlays.push(ov);
   })
 }
+
+/* 최저가(가격 정보가 있는 주유소 기준). 충전소는 가격이 없어 0을 돌려준다 */
+function minPrice(list){
+  const priced=list.filter(s=>s.price>0);
+  return priced.length?Math.min(...priced.map(s=>s.price)):0;
+}
+function openDetailById(id){
+  const s=stations.find(x=>String(x.id)===String(id));
+  if(!s)return;
+  const minP=minPrice(stations);
+  openDetail(s,s.price===minP&&minP>0);
+}
+document.getElementById('map').addEventListener('click',e=>{
+  const el=e.target.closest('[data-sid]');
+  if(el)openDetailById(el.dataset.sid);
+});
 
 /* ═══ 상세 ═══ */
 function openDetail(s,cheap){
@@ -799,30 +806,35 @@ function openDetail(s,cheap){
     ?'<div class="md-price">'+s.price.toLocaleString()+'<span> 원/ℓ</span></div>'
     :(isCharge?'<div class="md-price" style="font-size:22px">충전 가능</div>':'');
   const metaHtml='<div class="md-meta">'
-    +(isCharge?'':'🏷 '+brand+' &nbsp;|&nbsp; ')
+    +(isCharge?'':'🏷 '+esc(brand)+' &nbsp;|&nbsp; ')
     +'📍 '+distText(dist)+'<br>'
-    +(s.address?'📌 '+s.address+'<br>':'')
-    +(s.tel?'📞 '+s.tel+'<br>':'')
+    +(s.address?'📌 '+esc(s.address)+'<br>':'')
+    +(s.tel?'📞 '+esc(s.tel)+'<br>':'')
     +(!isCharge&&s.selfYn==='Y'?'🤖 셀프 주유소':'')
     +'</div>';
-  const btns='<a class="md-btn primary" href="'+navi+'" target="_blank">🚗 카카오맵 길찾기</a>'
-    +(s.url?'<a class="md-btn secondary" href="'+s.url+'" target="_blank">🔍 상세정보</a>':'')
+  const detailLink=safeHttpUrl(s.url);
+  const btns='<a class="md-btn primary" href="'+esc(navi)+'" target="_blank" rel="noopener">🚗 카카오맵 길찾기</a>'
+    +(detailLink?'<a class="md-btn secondary" href="'+esc(detailLink)+'" target="_blank" rel="noopener">🔍 상세정보</a>':'')
     +'<button class="md-btn secondary" onclick="closeMobileDetail()">닫기</button>';
 
   if(isMobile()){
-    document.getElementById('md-content').innerHTML=badge+'<h3>'+s.name+'</h3>'+priceHtml+metaHtml+btns;
+    document.getElementById('md-content').innerHTML=badge+'<h3>'+esc(s.name)+'</h3>'+priceHtml+metaHtml+btns;
     document.getElementById('mobile-detail').classList.add('open');
   } else {
-    const dBadge=badge.replace('md-badge','md-badge').replace('md-price','d-price');
     document.getElementById('detail-panel-content').innerHTML=
-      badge.replace(/md-badge/g,'md-badge')
-      +'<h3>'+s.name+'</h3>'
+      badge
+      +'<h3>'+esc(s.name)+'</h3>'
       +(s.price>0?'<div class="d-price">'+s.price.toLocaleString()+'</div>':'')
       +metaHtml.replace('md-meta','d-meta')
-      +'<a class="d-nav-btn primary" href="'+navi+'" target="_blank">🚗 카카오맵 길찾기</a>'
-      +(s.url?'<a class="d-nav-btn secondary" href="'+s.url+'" target="_blank">🔍 상세정보</a>':'');
+      +'<a class="d-nav-btn primary" href="'+esc(navi)+'" target="_blank" rel="noopener">🚗 카카오맵 길찾기</a>'
+      +(detailLink?'<a class="d-nav-btn secondary" href="'+esc(detailLink)+'" target="_blank" rel="noopener">🔍 상세정보</a>':'');
     document.getElementById('detail-panel').classList.add('open');
   }
+}
+/* http(s) 링크만 허용 — javascript: 등 스킴 차단 */
+function safeHttpUrl(u){
+  if(!u)return '';
+  try{const p=new URL(u,location.href);return /^https?:$/.test(p.protocol)?p.href:''}catch{return ''}
 }
 
 /* ═══ 카드 HTML ═══ */
@@ -835,17 +847,17 @@ function cardHTML(s,i,minP){
   const icon=currentType==='EV'?'⚡':currentType==='EV_FAST'?'🔴':currentType==='H2'?'🔵':'';
   const rankLabel=isCharge?(icon+' '+(i+1)+'위'):(cheap?'🏆 최저가':'#'+(i+1));
   const cls='station-card'+(cheap?' cheapest':'')+(isCharge?' charge-card':'');
-  return '<div class="'+cls+'" onclick="cardTap(\''+s.id+'\','+lat+','+lng+')">'
+  return '<div class="'+cls+'" data-sid="'+esc(s.id)+'" data-lat="'+lat+'" data-lng="'+lng+'">'
     +'<div class="card-row1">'
     +'<span class="card-rank">'+rankLabel+'</span>'
-    +'<div class="card-name">'+s.name+'</div>'
+    +'<div class="card-name">'+esc(s.name)+'</div>'
     +(isCharge
       ?'<div style="font-size:10px;color:var(--green);font-weight:700;white-space:nowrap;font-family:Outfit,sans-serif">충전가능</div>'
       :s.price>0?'<div class="card-price">'+s.price.toLocaleString()+'<small>원</small></div>':'')
     +'</div>'
     +'<div class="card-row2">'
     +'<span>📍 '+distText(dist)+'</span>'
-    +(isCharge?'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">'+s.address+'</span>':'<span>🏷 '+brand+'</span>'+(s.selfYn==='Y'?'<span>🤖 셀프</span>':''))
+    +(isCharge?'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">'+esc(s.address)+'</span>':'<span>🏷 '+esc(brand)+'</span>'+(s.selfYn==='Y'?'<span>🤖 셀프</span>':''))
     +'</div></div>'
 }
 
@@ -877,12 +889,15 @@ function renderList(list){
 }
 
 function cardTap(id,lat,lng){
-  map.setCenter(new kakao.maps.LatLng(lat,lng));map.setLevel(3);
-  const s=stations.find(x=>x.id===id);if(!s)return;
-  const isCharge=(currentType==='EV'||currentType==='EV_FAST'||currentType==='H2');
-  if(isCharge){openDetail(s,false)}
-  else{const priced=stations.filter(x=>x.price>0);const minP=priced.length?Math.min(...priced.map(x=>x.price)):0;openDetail(s,s.price===minP&&minP>0)}
+  if(map&&isFinite(lat)&&isFinite(lng)){map.setCenter(new kakao.maps.LatLng(lat,lng));map.setLevel(3)}
+  openDetailById(id);
 }
+['station-list','mobile-list'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{
+    const card=e.target.closest('.station-card');
+    if(card)cardTap(card.dataset.sid,parseFloat(card.dataset.lat),parseFloat(card.dataset.lng));
+  });
+});
 
 /* ═══ 컨트롤 이벤트 ═══ */
 document.getElementById('my-loc-btn-desk')?.addEventListener('click',()=>{if(map){map.setCenter(new kakao.maps.LatLng(userLat,userLng));map.setLevel(5)}});
@@ -921,24 +936,32 @@ async function loadStations(){
     stations=await fetchStations(userLat,userLng,radius,fuelCode);
     renderMarkers(stations);renderList(stations);
     const label={GAS:'주유소',EV:'전기충전소',EV_FAST:'급속충전소',H2:'수소충전소'};
-    showToast(stations.length+'개 '+label[currentType]+' 발견!','✅');
+    if(stations.length)showToast(stations.length+'개 '+label[currentType]+' 발견!','✅');
+    else showToast('반경 '+(radius/1000)+'km 안에 '+label[currentType]+'가 없습니다','🔍',4000);
   }catch(err){
     console.error(err);showToast(err.message,'❌',4000);
-    const eHTML='<div class="empty-state"><span class="big">⚠️</span>'+err.message+'</div>';
+    stations=[];clearOverlays();
+    ['sum-count','m-sum-count','sum-min','m-sum-min','sum-avg','m-sum-avg']
+      .forEach(id=>{document.getElementById(id).textContent='—'});
+    const eHTML='<div class="empty-state"><span class="big">⚠️</span>'+esc(err.message)+'</div>';
     document.getElementById('station-list').innerHTML=eHTML;
     document.getElementById('mobile-list').innerHTML=eHTML;
   }finally{setLoading(false)}
 }
 
 /* ═══ 초기화 ═══ */
+/* 모바일/데스크탑 전환(회전·창 크기 변경)에도 레이아웃이 따라오도록 */
+function applyLayout(){
+  const mobile=isMobile();
+  ['bottom-sheet','mobile-detail','fab-refresh','my-loc-btn']
+    .forEach(id=>{document.getElementById(id).style.display=mobile?'flex':'none'});
+  if(mobile)initSheet();
+}
+let layoutTimer;
+window.addEventListener('resize',()=>{clearTimeout(layoutTimer);layoutTimer=setTimeout(applyLayout,150)});
+
 function init(){
-  if(isMobile()){
-    document.getElementById('bottom-sheet').style.display='flex';
-    document.getElementById('mobile-detail').style.display='flex';
-    document.getElementById('fab-refresh').style.display='flex';
-    document.getElementById('my-loc-btn').style.display='flex';
-    initSheet();
-  }
+  applyLayout();
   setLoading(true,'위치를 가져오는 중...');
   if(!navigator.geolocation){showToast('위치 미지원 브라우저','❌');setLoading(false);return}
   navigator.geolocation.getCurrentPosition(
