@@ -1,0 +1,11 @@
+name = "opinet-proxy"
+main = "index.js"
+compatibility_date = "2026-07-29"
+
+[vars]
+# 페이지를 서비스하는 오리진. 비워 두면 모든 오리진을 허용한다.
+ALLOWED_ORIGINS = "https://haru7821.github.io"
+
+# 키는 vars 가 아니라 시크릿으로 넣는다:
+#   npx wrangler secret put OPINET_KEY
+#   npx wrangler secret put KAKAO_REST
