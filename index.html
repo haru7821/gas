@@ -563,11 +563,10 @@
         <option value="D047">경유</option>
         <option value="C004">LPG</option>
       </select>
+      <!-- 오피넷 aroundAll 반경 상한이 5km 이므로 5km 를 최대로 둔다 -->
       <select id="radius-sel" class="g-select">
         <option value="3000">3km</option>
-        <option value="5000">5km</option>
-        <option value="10000">10km</option>
-        <option value="20000" selected>20km</option>
+        <option value="5000" selected>5km</option>
       </select>
       <button id="refresh-btn">🔄</button>
     </div>
@@ -620,8 +619,7 @@
 
 <script>
 /* ═══ 설정 ═══ */
-const OPINET_KEY = 'F260418102';
-const KAKAO_REST = 'fccb7a0e34d796a0dd19e96dd2ff767f';
+/* 오피넷·카카오 REST 키는 워커(worker/index.js)에만 두고 여기서는 다루지 않는다 */
 const WORKER_URL = 'https://opinet-proxy.cnh7821.workers.dev';
 const BRAND_MAP  = {SKE:'SK에너지',GSC:'GS칼텍스',HDO:'HD현대오일뱅크',SOL:'S-OIL',RTE:'자영알뜰',RTX:'고속도로알뜰',NHO:'농협알뜰',ETC:'기타',EGS:'E1',SKG:'SK가스'};
 
@@ -720,9 +718,9 @@ function initMap(lat,lng){
 async function fetchKakaoPlaces(lat,lng,radius,keyword){
   const all=[];
   for(let page=1;page<=3;page++){
-    const url='https://dapi.kakao.com/v2/local/search/keyword.json?query='+encodeURIComponent(keyword)+'&x='+lng+'&y='+lat+'&radius='+radius+'&sort=distance&page='+page+'&size=15';
-    const res=await fetch(url,{headers:{Authorization:'KakaoAK '+KAKAO_REST}});
-    if(!res.ok)throw new Error('카카오 API 오류 '+res.status);
+    const q=new URLSearchParams({query:keyword,x:lng,y:lat,radius,page,size:15});
+    const res=await fetch(WORKER_URL+'/api/places?'+q);
+    if(!res.ok)throw new Error('장소 검색 오류 '+res.status);
     const data=await res.json();
     all.push(...(data.documents||[]));
     if(data.meta?.is_end)break;
@@ -737,9 +735,10 @@ async function fetchStations(lat,lng,radius,fuelCode){
   if(fuelCode==='EV_FAST') return fetchKakaoPlaces(lat,lng,radius,'급속충전소');
   if(fuelCode==='H2')      return fetchKakaoPlaces(lat,lng,radius,'수소충전소');
   const k=wgs84ToKatec(lat,lng);
-  const url='https://www.opinet.co.kr/api/aroundAll.do?code='+OPINET_KEY+'&x='+k.x+'&y='+k.y+'&radius='+radius+'&prodcd='+fuelCode+'&sort=1&out=xml';
-  const res=await fetch(WORKER_URL+'?url='+encodeURIComponent(url));
-  if(!res.ok)throw new Error('프록시 오류 '+res.status);
+  // 오피넷 aroundAll 반경 상한이 5km 이므로 넘기지 않는다
+  const q=new URLSearchParams({x:k.x,y:k.y,radius:Math.min(5000,parseInt(radius,10)||5000),prodcd:fuelCode});
+  const res=await fetch(WORKER_URL+'/api/gas?'+q);
+  if(!res.ok)throw new Error('주유소 API 오류 '+res.status);
   const xml=new DOMParser().parseFromString(await res.text(),'text/xml');
   if(xml.querySelector('parsererror'))throw new Error('오피넷 응답을 해석할 수 없습니다');
   // 오피넷은 오류도 200으로 내려주므로 결과 코드를 확인한다
